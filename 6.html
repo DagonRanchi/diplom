@@ -1,0 +1,306 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="light" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Описание системы (архитектура)</title>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&amp;display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #F5F7FA;
+            overflow: hidden;
+        }
+        .slide-container {
+            width: 1280px;
+            height: 720px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            background-color: #FFFFFF;
+            color: #1A2E5A;
+        }
+        /* Header */
+        .header-bar {
+            height: 100px;
+            display: flex;
+            align-items: center;
+            padding-left: 60px;
+            border-bottom: 2px solid #E8EDF5;
+            background-color: #FFFFFF;
+            z-index: 10;
+        }
+        .header-title {
+            font-size: 36px;
+            font-weight: 700;
+            color: #1A2E5A;
+            position: relative;
+            padding-bottom: 10px;
+        }
+        .header-title::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 80px;
+            height: 4px;
+            background-color: #2E6BE6;
+        }
+        
+        /* Main Content */
+        .content-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 0 40px;
+            position: relative;
+            z-index: 5;
+        }
+
+        /* Flow Diagram Styles */
+        .flow-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            max-width: 1100px;
+            gap: 20px;
+        }
+
+        .flow-card {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-radius: 12px;
+            padding: 24px;
+            width: 200px;
+            height: 240px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            position: relative;
+            transition: transform 0.2s;
+            z-index: 2;
+        }
+        
+        .flow-card:hover {
+            border-color: #2E6BE6;
+            box-shadow: 0 10px 15px -3px rgba(46, 107, 230, 0.1);
+        }
+
+        .flow-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 6px;
+            background-color: #1A2E5A;
+            border-top-left-radius: 12px;
+            border-top-right-radius: 12px;
+        }
+
+        .card-icon {
+            width: 80px;
+            height: 80px;
+            border-radius: 50%;
+            background-color: #F1F5F9;
+            color: #2E6BE6;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            margin-bottom: 20px;
+            margin-top: 10px;
+            border: 2px solid #E8EDF5;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 700;
+            color: #1A2E5A;
+            text-align: center;
+            margin-bottom: 8px;
+            line-height: 1.2;
+        }
+
+        .card-desc {
+            font-size: 14px;
+            color: #64748B;
+            text-align: center;
+            line-height: 1.4;
+        }
+
+        /* Arrows */
+        .arrow-connector {
+            flex: 1;
+            height: 2px;
+            background-color: #CBD5E1;
+            position: relative;
+            min-width: 40px;
+        }
+
+        .arrow-connector::after {
+            content: '';
+            position: absolute;
+            right: -1px;
+            top: -5px;
+            width: 0;
+            height: 0;
+            border-left: 10px solid #CBD5E1;
+            border-top: 6px solid transparent;
+            border-bottom: 6px solid transparent;
+        }
+
+        .arrow-label {
+            position: absolute;
+            top: -25px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 12px;
+            color: #64748B;
+            font-weight: 500;
+            background-color: #FFFFFF;
+            padding: 2px 8px;
+            border-radius: 4px;
+            white-space: nowrap;
+        }
+
+        /* Specific Highlight for the Database/Server card */
+        .flow-card.server-card::before {
+            background-color: #2E6BE6;
+        }
+        .flow-card.server-card .card-icon {
+            background-color: #EFF6FF;
+            color: #1A2E5A;
+            border-color: #BFDBFE;
+        }
+
+        /* Decorative Background */
+        .bg-grid {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: linear-gradient(#F1F5F9 1px, transparent 1px), linear-gradient(90deg, #F1F5F9 1px, transparent 1px);
+            background-size: 40px 40px;
+            z-index: 0;
+        }
+
+        /* Footer */
+        .footer-info {
+            position: absolute;
+            bottom: 20px;
+            left: 60px;
+            font-size: 14px;
+            color: #9CA3AF;
+            z-index: 20;
+        }
+        .page-number {
+            position: absolute;
+            bottom: 20px;
+            right: 30px;
+            font-size: 14px;
+            color: #9CA3AF;
+            z-index: 20;
+        }
+    </style>
+</head>
+<body style="">
+<div class="slide-container">
+<!-- Background -->
+<div class="bg-grid"></div>
+<!-- Header -->
+<div class="header-bar">
+<h1 class="header-title">Описание системы (архитектура)</h1>
+</div>
+<!-- Main Content -->
+<div class="content-area">
+<div class="flow-container">
+<!-- Node 1: Applicant -->
+<div class="flow-card" style="transform: translate(-22.4522px, 0px);">
+<div class="card-icon">
+<i class="fa-solid fa-user-graduate"></i>
+</div>
+<div class="card-title">
+<p>Абитуриент</p>
+</div>
+<div class="card-desc">
+<p>Подача заявления,<br>загрузка сканов</p>
+</div>
+</div>
+<!-- Arrow 1 -->
+<div class="arrow-connector" style="transform: translate(-17.3494px, -1.02055px);">
+<div class="arrow-label"><p style="position: relative; transform: translate(-3.06162px, -2.0411px);">Интернет</p></div>
+</div>
+<!-- Node 2: Web Platform -->
+<div class="flow-card" style="transform: translate(-12.2467px, 1.02055px);">
+<div class="card-icon">
+<i class="fa-solid fa-laptop-code"></i>
+</div>
+<div class="card-title">
+<p>Веб-платформа</p>
+</div>
+<div class="card-desc">
+<p>Интерфейс подачи,<br>валидация форм</p>
+</div>
+</div>
+<!-- Arrow 2 -->
+<div class="arrow-connector">
+<div class="arrow-label"><p>Защищенный канал</p></div>
+</div>
+<!-- Node 3: Server & DB -->
+<div class="flow-card server-card" style="transform: translate(8.16443px, -4.08221px);">
+<div class="card-icon">
+<i class="fa-solid fa-server"></i>
+</div>
+<div class="card-title">
+<p>Сервер колледжа (БД)</p>
+</div>
+<div class="card-desc">
+<p>Хранение данных,<br>бизнес-логика</p>
+</div>
+</div>
+<!-- Arrow 3 -->
+<div class="arrow-connector">
+<div class="arrow-label"><p style="position: relative; transform: translate(10.2055px, 0px);">Локальная сеть</p></div>
+</div>
+<!-- Node 4: Staff -->
+<div class="flow-card" style="transform: translate(13.2672px, 0px);">
+<div class="card-icon">
+<i class="fa-solid fa-user-tie"></i>
+</div>
+<div class="card-title">
+<p>Сотрудник</p>
+</div>
+<div class="card-desc">
+<p>Проверка данных,<br>формирование дел</p>
+</div>
+</div>
+</div>
+<!-- Legend/Note -->
+<div class="mt-12 flex items-center space-x-8 text-sm text-gray-500 bg-white px-6 py-2 rounded-full border border-gray-100 shadow-sm">
+<div class="flex items-center">
+<span class="w-3 h-3 rounded-full bg-blue-600 mr-2"></span>
+<p>Поток данных</p>
+</div>
+<div class="flex items-center">
+<span class="w-3 h-3 rounded-full bg-gray-800 mr-2"></span>
+<p>Участники процесса</p>
+</div>
+</div>
+</div>
+<!-- Footer -->
+<div class="footer-info">
+<p>Дипломный проект: Разработка клиент-серверной системы для верификации абитуриентов с самозаполнением данных и интеграцией с НОБД</p>
+</div>
+<div class="page-number">6</div>
+</div>
+
+</body></html>

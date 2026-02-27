@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Presentation</title>
+<style>
+    :root {
+        --slide-width: 1280;
+        --slide-height: 720;
+    }
+
+    html,
+    body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #060d1f;
+        font-family: Arial, sans-serif;
+    }
+
+    #app {
+        width: 100%;
+        height: 100%;
+        display: grid;
+        place-items: center;
+    }
+
+    #stage {
+        position: relative;
+        width: calc(var(--slide-width) * 1px);
+        height: calc(var(--slide-height) * 1px);
+        transform-origin: center center;
+        background: #0b1327;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.45);
+    }
+
+    #slideFrame {
+        display: block;
+        width: 100%;
+        height: 100%;
+        border: 0;
+        background: #ffffff;
+    }
+
+    .zone {
+        position: fixed;
+        top: 0;
+        bottom: 0;
+        width: 50%;
+        z-index: 10;
+    }
+
+    #zone-left {
+        left: 0;
+        cursor: w-resize;
+    }
+
+    #zone-right {
+        right: 0;
+        cursor: e-resize;
+    }
+
+    #hud {
+        position: fixed;
+        right: 16px;
+        bottom: 12px;
+        z-index: 20;
+        padding: 6px 10px;
+        border: 1px solid rgba(214, 226, 255, 0.2);
+        border-radius: 6px;
+        color: #d6e2ff;
+        background: rgba(5, 12, 25, 0.75);
+        font-size: 13px;
+        user-select: none;
+    }
+
+    #fullscreenBtn {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        z-index: 30;
+        padding: 8px 12px;
+        border: 1px solid rgba(214, 226, 255, 0.2);
+        border-radius: 6px;
+        color: #d6e2ff;
+        background: rgba(5, 12, 25, 0.65);
+        font-size: 14px;
+        cursor: pointer;
+        user-select: none;
+    }
+
+    #fullscreenBtn:hover {
+        background: rgba(15, 28, 54, 0.9);
+    }
+</style>
+</head>
+<body>
+<div id="app">
+<div id="stage">
+<iframe id="slideFrame" title="Presentation slide" loading="eager"></iframe>
+</div>
+</div>
+<div id="zone-left" class="zone" aria-hidden="true"></div>
+<div id="zone-right" class="zone" aria-hidden="true"></div>
+<button id="fullscreenBtn" type="button">Во весь экран</button>
+<div id="hud"></div>
+<script>
+(() => {
+    const slides = ["1.html", ...Array.from({ length: 11 }, (_, i) => `${i + 2}.html`)];
+    const stage = document.getElementById("stage");
+    const frame = document.getElementById("slideFrame");
+    const hud = document.getElementById("hud");
+    const fullscreenBtn = document.getElementById("fullscreenBtn");
+    const leftZone = document.getElementById("zone-left");
+    const rightZone = document.getElementById("zone-right");
+    const baseWidth = 1280;
+    const baseHeight = 720;
+
+    let current = parseHash();
+
+    function parseHash() {
+        const raw = window.location.hash.replace("#", "");
+        const num = Number.parseInt(raw, 10);
+        if (Number.isInteger(num) && num >= 1 && num <= slides.length) {
+            return num - 1;
+        }
+        return 0;
+    }
+
+    function fitStage() {
+        const scale = Math.min(window.innerWidth / baseWidth, window.innerHeight / baseHeight);
+        stage.style.transform = `scale(${scale})`;
+    }
+
+    function updateHud() {
+        hud.textContent = `${current + 1} / ${slides.length}`;
+    }
+
+    function syncHash() {
+        const hash = `#${current + 1}`;
+        if (window.location.hash !== hash) {
+            history.replaceState(null, "", hash);
+        }
+    }
+
+    function render() {
+        frame.src = slides[current];
+        updateHud();
+        syncHash();
+    }
+
+    function goTo(index) {
+        if (index < 0 || index >= slides.length || index === current) {
+            return;
+        }
+        current = index;
+        render();
+    }
+
+    function next() {
+        goTo(current + 1);
+    }
+
+    function prev() {
+        goTo(current - 1);
+    }
+
+    function syncFullscreenButton() {
+        if (document.fullscreenElement) {
+            fullscreenBtn.textContent = "Выйти из Fullscreen";
+        } else {
+            fullscreenBtn.textContent = "Во весь экран";
+        }
+    }
+
+    function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().catch(() => {});
+        } else {
+            document.exitFullscreen().catch(() => {});
+        }
+    }
+
+    leftZone.addEventListener("click", prev);
+    rightZone.addEventListener("click", next);
+    fullscreenBtn.addEventListener("click", toggleFullscreen);
+    document.addEventListener("fullscreenchange", syncFullscreenButton);
+
+    window.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowRight" || event.key === "PageDown" || event.key === " ") {
+            event.preventDefault();
+            next();
+            return;
+        }
+        if (event.key === "ArrowLeft" || event.key === "PageUp" || event.key === "Backspace") {
+            event.preventDefault();
+            prev();
+        }
+    });
+
+    let touchStartX = null;
+    stage.addEventListener(
+        "touchstart",
+        (event) => {
+            if (event.touches.length === 1) {
+                touchStartX = event.touches[0].clientX;
+            }
+        },
+        { passive: true }
+    );
+    stage.addEventListener(
+        "touchend",
+        (event) => {
+            if (touchStartX === null || event.changedTouches.length !== 1) {
+                touchStartX = null;
+                return;
+            }
+            const endX = event.changedTouches[0].clientX;
+            const deltaX = endX - touchStartX;
+            touchStartX = null;
+            if (Math.abs(deltaX) < 40) {
+                const rect = stage.getBoundingClientRect();
+                const middle = rect.left + rect.width / 2;
+                if (endX >= middle) {
+                    next();
+                } else {
+                    prev();
+                }
+                return;
+            }
+            if (deltaX < 0) {
+                next();
+            } else {
+                prev();
+            }
+        },
+        { passive: true }
+    );
+
+    window.addEventListener("hashchange", () => {
+        current = parseHash();
+        render();
+    });
+    window.addEventListener("resize", fitStage);
+
+    fitStage();
+    render();
+    syncFullscreenButton();
+})();
+</script>
+</body>
+</html>

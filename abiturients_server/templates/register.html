@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Регистрация абитуриентов</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f2f5fb;
+            color: #1a2e5a;
+        }
+        .container {
+            max-width: 760px;
+            margin: 40px auto;
+            background: #fff;
+            border: 1px solid #d8e0f0;
+            border-radius: 12px;
+            padding: 28px;
+            box-shadow: 0 10px 24px rgba(0, 0, 0, 0.08);
+        }
+        h1 {
+            margin: 0 0 10px;
+            font-size: 30px;
+        }
+        p {
+            margin: 0 0 20px;
+            color: #48556f;
+        }
+        .alert {
+            padding: 10px 12px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+            font-size: 14px;
+        }
+        .alert-success {
+            background: #e9f8ef;
+            color: #0f6b2e;
+            border: 1px solid #b8ebc8;
+        }
+        .alert-error {
+            background: #fff0f0;
+            color: #8a1d1d;
+            border: 1px solid #f3c1c1;
+        }
+        .field {
+            margin-bottom: 14px;
+        }
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 6px;
+        }
+        input,
+        select,
+        textarea {
+            width: 100%;
+            box-sizing: border-box;
+            border: 1px solid #c8d3eb;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 15px;
+        }
+        textarea {
+            min-height: 110px;
+            resize: vertical;
+        }
+        button {
+            border: 0;
+            border-radius: 8px;
+            background: #2e6be6;
+            color: #fff;
+            font-weight: 700;
+            font-size: 15px;
+            padding: 12px 18px;
+            cursor: pointer;
+        }
+        .links {
+            margin-top: 16px;
+            font-size: 14px;
+        }
+        .links a {
+            color: #2e6be6;
+            text-decoration: none;
+        }
+        .links a:hover {
+            text-decoration: underline;
+        }
+    </style>
+</head>
+<body>
+<main class="container">
+    <h1>Подача заявки абитуриента</h1>
+    <p>Заполните форму. После отправки заявка попадет в базу и будет видна администратору.</p>
+
+    {% if success %}
+    <div class="alert alert-success">Заявка успешно отправлена.</div>
+    {% endif %}
+    {% if error %}
+    <div class="alert alert-error">{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/apply">
+        <div class="field">
+            <label for="full_name">ФИО *</label>
+            <input id="full_name" name="full_name" required>
+        </div>
+        <div class="field">
+            <label for="email">Email *</label>
+            <input id="email" name="email" type="email" required>
+        </div>
+        <div class="field">
+            <label for="phone">Телефон *</label>
+            <input id="phone" name="phone" required>
+        </div>
+        <div class="field">
+            <label for="specialty">Специальность *</label>
+            <select id="specialty" name="specialty" required>
+                <option value="">Выберите специальность</option>
+                <option>06130100 Программное обеспечение (по видам)</option>
+                <option>06120100 Вычислительная техника и информационные сети</option>
+                <option>Другой вариант</option>
+            </select>
+        </div>
+        <div class="field">
+            <label for="notes">Комментарий</label>
+            <textarea id="notes" name="notes" placeholder="Дополнительная информация"></textarea>
+        </div>
+        <button type="submit">Отправить заявку</button>
+    </form>
+
+    <div class="links">
+        <a href="/admin/login">Вход для администратора</a>
+    </div>
+</main>
+</body>
+</html>

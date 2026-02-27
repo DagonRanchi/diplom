@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Заявки абитуриентов</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #f2f5fb;
+            color: #1a2e5a;
+        }
+        .wrapper {
+            max-width: 1200px;
+            margin: 22px auto;
+            padding: 0 12px;
+        }
+        .topbar {
+            background: #fff;
+            border: 1px solid #d8e0f0;
+            border-radius: 12px;
+            padding: 14px 16px;
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        .topbar h1 {
+            margin: 0;
+            font-size: 26px;
+        }
+        .topbar .meta {
+            font-size: 14px;
+            color: #516180;
+        }
+        .actions a {
+            color: #2e6be6;
+            text-decoration: none;
+            margin-left: 12px;
+            font-weight: 600;
+        }
+        .table-wrap {
+            background: #fff;
+            border: 1px solid #d8e0f0;
+            border-radius: 12px;
+            overflow: auto;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 1020px;
+        }
+        th,
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e8edf8;
+            text-align: left;
+            vertical-align: top;
+            font-size: 14px;
+        }
+        th {
+            background: #f8fafe;
+            font-size: 13px;
+            letter-spacing: 0.2px;
+            color: #4d5d7c;
+            position: sticky;
+            top: 0;
+        }
+        .empty {
+            padding: 20px;
+            color: #516180;
+        }
+        .pdf-link {
+            display: inline-block;
+            padding: 6px 10px;
+            border-radius: 8px;
+            background: #2e6be6;
+            color: #fff;
+            text-decoration: none;
+            font-size: 13px;
+            font-weight: 600;
+        }
+        .pdf-link:hover {
+            background: #2158c4;
+        }
+    </style>
+</head>
+<body>
+<main class="wrapper">
+    <section class="topbar">
+        <div>
+            <h1>Заявки абитуриентов</h1>
+            <div class="meta">Администратор: {{ admin_username }}</div>
+        </div>
+        <div class="actions">
+            <a href="/">Форма регистрации</a>
+            <a href="/admin/logout">Выйти</a>
+        </div>
+    </section>
+
+    <section class="table-wrap">
+        {% if applications %}
+        <table>
+            <thead>
+            <tr>
+                <th>ID</th>
+                <th>Дата</th>
+                <th>ФИО</th>
+                <th>Email</th>
+                <th>Телефон</th>
+                <th>Специальность</th>
+                <th>Комментарий</th>
+                <th>PDF</th>
+            </tr>
+            </thead>
+            <tbody>
+            {% for item in applications %}
+            <tr>
+                <td>{{ item.id }}</td>
+                <td>{{ item.created_at.strftime("%Y-%m-%d %H:%M") if item.created_at else "" }}</td>
+                <td>{{ item.full_name }}</td>
+                <td>{{ item.email }}</td>
+                <td>{{ item.phone }}</td>
+                <td>{{ item.specialty }}</td>
+                <td>{{ item.notes or "-" }}</td>
+                <td>
+                    <a class="pdf-link" href="/admin/applications/{{ item.id }}/pdf">Скачать PDF</a>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <div class="empty">Пока нет ни одной заявки.</div>
+        {% endif %}
+    </section>
+</main>
+</body>
+</html>

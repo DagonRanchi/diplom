@@ -1,0 +1,197 @@
+﻿<!DOCTYPE html>
+<html lang="ru" data-theme="light" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Функционал для абитуриентов</title>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&amp;display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #F5F7FA;
+            overflow: hidden;
+        }
+        .slide-container {
+            width: 1280px;
+            height: 720px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            background-color: #FFFFFF;
+            color: #1A2E5A;
+        }
+        /* Decor Elements */
+        .header-bar {
+            height: 120px;
+            display: flex;
+            align-items: center;
+            padding-left: 60px;
+            background-color: #1A2E5A; /* Removed gradient */
+            position: relative;
+        }
+        .header-bar::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 200px;
+            height: 6px;
+            background-color: #2E6BE6;
+        }
+        .content-area {
+            flex: 1;
+            padding: 30px 60px; /* Reduced top/bottom padding slightly */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .list-container {
+            display: flex;
+            flex-direction: column;
+            gap: 20px; /* Controlled spacing for 5 items */
+        }
+        .list-item {
+            display: flex;
+            align-items: center; /* Center align vertically */
+            background: #FFFFFF;
+            border-left: 4px solid transparent;
+            transition: all 0.3s ease;
+            padding: 10px 15px;
+            border-radius: 8px;
+        }
+        .list-item:hover {
+            border-left: 4px solid #2E6BE6;
+            background: #F8FAFC;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+        }
+        .icon-box {
+            width: 60px; /* Slightly smaller to fit 5 items */
+            height: 60px;
+            min-width: 60px;
+            background-color: #E8EDF5;
+            color: #2E6BE6;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin-right: 25px;
+        }
+        .text-content h3 {
+            font-size: 24px; /* Slightly smaller font for density */
+            font-weight: 700;
+            margin: 0 0 4px 0;
+            color: #1A2E5A;
+        }
+        .text-content p {
+            font-size: 16px;
+            color: #4B5563;
+            margin: 0;
+            line-height: 1.4;
+        }
+        /* Background decor */
+        .bg-decor {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 300px;
+            height: 300px;
+            opacity: 0.05;
+            z-index: 0;
+            pointer-events: none;
+            color: #1A2E5A;
+        }
+        .page-number {
+            position: absolute;
+            bottom: 20px;
+            right: 30px;
+            font-size: 14px;
+            color: #9CA3AF;
+        }
+        .footer-text {
+            position: absolute; 
+            bottom: 20px; 
+            left: 60px; 
+            color: #9CA3AF; 
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body style="">
+<div class="slide-container">
+<!-- Header -->
+<div class="header-bar">
+<h1 class="text-white text-4xl font-bold tracking-wide">Функционал для абитуриентов</h1>
+</div>
+<!-- Main Content -->
+<div class="content-area z-10">
+<div class="list-container max-w-5xl">
+<!-- Item 1 -->
+<div class="list-item">
+<div class="icon-box">
+<i class="fa-solid fa-user-lock"></i>
+</div>
+<div class="text-content">
+<h3>Регистрация и авторизация</h3>
+<p>Создание защищенной учетной записи с использованием email или телефона для доступа к личному кабинету.</p>
+</div>
+</div>
+<!-- Item 2 -->
+<div class="list-item">
+<div class="icon-box">
+<i class="fa-solid fa-file-pen"></i>
+</div>
+<div class="text-content">
+<h3>Заполнение анкеты</h3>
+<p>Ввод персональных данных, сведений об образовании и льготах через удобную электронную форму.</p>
+</div>
+</div>
+<!-- Item 3 -->
+<div class="list-item">
+<div class="icon-box">
+<i class="fa-solid fa-graduation-cap"></i>
+</div>
+<div class="text-content">
+<h3>Выбор специальности</h3>
+<p>Просмотр доступных направлений подготовки и выбор приоритетных специальностей для поступления.</p>
+</div>
+</div>
+<!-- Item 4 -->
+<div class="list-item">
+<div class="icon-box">
+<i class="fa-solid fa-upload"></i>
+</div>
+<div class="text-content">
+<h3>Загрузка документов</h3>
+<p>Прикрепление скан-копий удостоверения, аттестата и других необходимых документов в цифровом формате.</p>
+</div>
+</div>
+<!-- Item 5 -->
+<div class="list-item">
+<div class="icon-box">
+<i class="fa-solid fa-magnifying-glass-chart"></i>
+</div>
+<div class="text-content">
+<h3>Отслеживание статуса заявки</h3>
+<p>Мониторинг этапов рассмотрения документов и получение уведомлений о решении комиссии в реальном времени.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Decorative Icon Background -->
+<div class="bg-decor">
+<i class="fa-solid fa-users-viewfinder" style="font-size: 300px;"></i>
+</div>
+<!-- Footer Info -->
+<div class="footer-text">
+<p>Дипломный проект: Разработка клиент-серверной системы для верификации абитуриентов с самозаполнением данных и интеграцией с НОБД</p>
+</div>
+<div class="page-number">7</div>
+</div>
+
+</body></html>
+
+

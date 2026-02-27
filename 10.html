@@ -1,0 +1,176 @@
+﻿<!DOCTYPE html>
+<html lang="ru" data-theme="light" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Интеграция с НОБД</title>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&amp;display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #F5F7FA;
+            overflow: hidden;
+        }
+        .slide-container {
+            width: 1280px;
+            height: 720px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            background-color: #FFFFFF;
+            color: #1A2E5A;
+        }
+        /* Decor Elements */
+        .header-bar {
+            height: 120px;
+            display: flex;
+            align-items: center;
+            padding-left: 60px;
+            background-color: #1A2E5A; /* Removed gradient */
+            position: relative;
+        }
+        .header-bar::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 200px;
+            height: 6px;
+            background-color: #2E6BE6;
+        }
+        .content-area {
+            flex: 1;
+            padding: 30px 60px; /* Slightly adjusted padding for fit */
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .grid-layout {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 1.5rem; /* Gap between items */
+            max-width: 1100px;
+        }
+        .list-item {
+            display: flex;
+            align-items: flex-start;
+            padding: 15px;
+            background: #FFFFFF;
+            border-left: 4px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .list-item:hover {
+            border-left: 4px solid #2E6BE6;
+            background: #F8FAFC;
+        }
+        .icon-box {
+            width: 64px;
+            height: 64px;
+            min-width: 64px;
+            background-color: #E8EDF5;
+            color: #2E6BE6;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            margin-right: 25px;
+        }
+        .text-content h3 {
+            font-size: 24px;
+            font-weight: 700;
+            margin: 0 0 6px 0;
+            color: #1A2E5A;
+        }
+        .text-content p {
+            font-size: 16px;
+            color: #4B5563;
+            margin: 0;
+            line-height: 1.5;
+        }
+        /* Background subtle pattern using SVG instead of gradient */
+        .bg-pattern {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 400px;
+            height: 400px;
+            background-image: url("data:image/svg+xml,%3Csvg width='20' height='20' viewBox='0 0 20 20' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='%23E8EDF5' fill-opacity='0.6' fill-rule='evenodd'%3E%3Ccircle cx='3' cy='3' r='3'/%3E%3Ccircle cx='13' cy='13' r='3'/%3E%3C/g%3E%3C/svg%3E");
+            opacity: 0.6;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .page-number {
+            position: absolute;
+            bottom: 20px;
+            right: 30px;
+            font-size: 14px;
+            color: #9CA3AF;
+        }
+        .footer-text {
+            position: absolute; 
+            bottom: 20px; 
+            left: 60px; 
+            color: #9CA3AF; 
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body style="">
+<div class="slide-container">
+<!-- Header -->
+<div class="header-bar">
+<h1 class="text-white text-4xl font-bold tracking-wide">Интеграция с НОБД</h1>
+</div>
+<!-- Main Content -->
+<div class="content-area z-10">
+<div class="grid-layout" style="position: relative; transform: translate(-1.02055px, -11.2261px);">
+<!-- Item 1 -->
+<div class="list-item rounded-lg">
+<div class="icon-box">
+<i class="fa-solid fa-cloud-arrow-down"></i>
+</div>
+<div class="text-content">
+<h3>Автоматический импорт данных об абитуриенте</h3>
+<p>При возможности прямая интеграция с Национальной образовательной базы данных для загрузки данных на их сервер исключая ручной ввод</p>
+</div>
+</div>
+<!-- Item 2 -->
+
+<!-- Item 3 -->
+<div class="list-item rounded-lg">
+<div class="icon-box">
+<i class="fa-solid fa-clipboard-check"></i>
+</div>
+<div class="text-content">
+<h3>Снижение количества ошибок</h3>
+<p>Устранение рисков, связанных с опечатками, некорректным переносом данных с бумажных носителей и дублированием учетных записей.</p>
+</div>
+</div>
+<!-- Item 4 -->
+<div class="list-item rounded-lg">
+<div class="icon-box">
+<i class="fa-solid fa-arrows-rotate"></i>
+</div>
+<div class="text-content">
+<h3>Актуальность данных</h3>
+<p>Обеспечение постоянной синхронизации информации в локальной системе с официальными государственными реестрами в реальном времени.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Decorative Pattern -->
+<div class="bg-pattern"></div>
+<!-- Footer Info -->
+<div class="footer-text">
+<p>Дипломный проект: Разработка клиент-серверной системы для верификации абитуриентов с самозаполнением данных и интеграцией с НОБД</p>
+</div>
+<div class="page-number">10</div>
+</div>
+
+</body></html>
+
+

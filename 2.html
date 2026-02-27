@@ -1,0 +1,172 @@
+﻿<!DOCTYPE html>
+<html lang="ru" data-theme="light" style=""><head>
+<meta charset="utf-8">
+<meta content="width=device-width, initial-scale=1.0" name="viewport">
+<title>Актуальность проекта</title>
+<link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&amp;display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: #F5F7FA;
+            overflow: hidden;
+        }
+        .slide-container {
+            width: 1280px;
+            height: 720px;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            background-color: #FFFFFF;
+            color: #1A2E5A;
+        }
+        /* Decor Elements */
+        .header-bar {
+            height: 120px;
+            display: flex;
+            align-items: center;
+            padding-left: 60px;
+            background: linear-gradient(90deg, #1A2E5A 0%, #1A2E5A 100%);
+            position: relative;
+        }
+        .header-bar::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 200px;
+            height: 6px;
+            background-color: #2E6BE6;
+        }
+        .content-area {
+            flex: 1;
+            padding: 40px 60px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+        .list-item {
+            display: flex;
+            align-items: flex-start;
+            margin-bottom: 35px;
+            background: #FFFFFF;
+            border-left: 4px solid transparent;
+            transition: all 0.3s ease;
+        }
+        .list-item:hover {
+            border-left: 4px solid #2E6BE6;
+            background: #F8FAFC;
+        }
+        .icon-box {
+            width: 70px;
+            height: 70px;
+            min-width: 70px;
+            background-color: #E8EDF5;
+            color: #2E6BE6;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 32px;
+            margin-right: 30px;
+        }
+        .text-content h3 {
+            font-size: 28px;
+            font-weight: 700;
+            margin: 0 0 8px 0;
+            color: #1A2E5A;
+        }
+        .text-content p {
+            font-size: 18px;
+            color: #4B5563;
+            margin: 0;
+            line-height: 1.5;
+        }
+        /* Background subtle pattern */
+        .bg-pattern {
+            position: absolute;
+            bottom: 0;
+            right: 0;
+            width: 400px;
+            height: 400px;
+            background-image: radial-gradient(#E8EDF5 1px, transparent 1px);
+            background-size: 20px 20px;
+            opacity: 0.5;
+            z-index: 0;
+            pointer-events: none;
+        }
+        .page-number {
+            position: absolute;
+            bottom: 20px;
+            right: 30px;
+            font-size: 14px;
+            color: #9CA3AF;
+        }
+    </style>
+</head>
+<body style="">
+<div class="slide-container">
+<!-- Header -->
+<div class="header-bar">
+<h1 class="text-white text-4xl font-bold tracking-wide">Актуальность проекта</h1>
+</div>
+<!-- Main Content -->
+<div class="content-area z-10">
+<div class="grid grid-cols-1 gap-4 max-w-5xl" style="position: relative; transform: translate(-1.20767px, -3.62287px);">
+<!-- Item 1 -->
+<div class="list-item p-4 rounded-lg" style="position: relative; transform: translate(-1.20765px, -30.1914px);">
+<div class="icon-box">
+<i class="fa-solid fa-arrow-trend-up"></i>
+</div>
+<div class="text-content">
+<h3>Рост числа абитуриентов</h3>
+<p>Ежегодное увеличение потока поступающих создает высокую нагрузку на приемную комиссию и требует оптимизации ресурсов.</p>
+</div>
+</div>
+<!-- Item 2 -->
+<div class="list-item p-4 rounded-lg" style="position: relative; transform: translate(1.20765px, -76.0822px);">
+<div class="icon-box">
+<i class="fa-solid fa-keyboard"></i>
+</div>
+<div class="text-content">
+<h3>Ошибки при ручном вводе</h3>
+<p>Перенос данных с бумажных носителей в реестры сопряжен с высоким риском опечаток и неточностей в документах.</p>
+</div>
+</div>
+<!-- Item 3 -->
+<div class="list-item p-4 rounded-lg" style="position: relative; transform: translate(-2.41531px, -128.011px);">
+<div class="icon-box">
+<i class="fa-solid fa-user-clock"></i>
+</div>
+<div class="text-content">
+<h3>Влияние человеческого фактора</h3>
+<p>Зависимость скорости обработки заявок от усталости персонала и ограниченного рабочего времени сотрудников.</p>
+</div>
+</div>
+<!-- Item 4 -->
+<div class="list-item p-4 rounded-lg" style="position: relative; transform: translate(-1.20765px, -179.94px);">
+<div class="icon-box">
+<i class="fa-solid fa-server"></i>
+</div>
+<div class="text-content">
+<h3>Необходимость автоматизации</h3>
+<p>Потребность в создании единой цифровой среды для мгновенного доступа к данным и формирования отчетности.</p>
+</div>
+</div>
+</div>
+</div>
+<!-- Decorative Pattern -->
+<div class="bg-pattern"></div>
+<!-- Footer Info -->
+<div class="absolute bottom-4 left-8 text-gray-400 text-sm">
+<p>Дипломный проект: Разработка клиент-серверной системы для верификации абитуриентов с самозаполнением данных и интеграцией с НОБД</p>
+</div>
+<div class="page-number">2</div>
+</div>
+
+</body></html>
+
+
