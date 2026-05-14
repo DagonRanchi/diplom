@@ -14,11 +14,15 @@ class Settings(BaseSettings):
     jwt_secret: str = Field(default="change-me-in-production", alias="JWT_SECRET")
     jwt_algorithm: str = Field(default="HS256", alias="JWT_ALGORITHM")
     access_token_expire_minutes: int = Field(default=720, alias="ACCESS_TOKEN_EXPIRE_MINUTES")
-    cors_origins: list[str] = Field(
-        default=["http://localhost:5173", "http://localhost:3000", "http://localhost:8080"],
+    cors_origins: str = Field(
+        default="http://localhost:5173,http://localhost:3000,http://localhost:8080",
         alias="CORS_ORIGINS",
     )
     environment: str = Field(default="local", alias="ENVIRONMENT")
+
+    @property
+    def cors_origin_list(self) -> list[str]:
+        return [origin.strip() for origin in self.cors_origins.split(",") if origin.strip()]
 
     @field_validator("database_url", mode="before")
     @classmethod
@@ -27,13 +31,6 @@ class Settings(BaseSettings):
             return value.replace("postgres://", "postgresql+psycopg2://", 1)
         if isinstance(value, str) and value.startswith("postgresql://"):
             return value.replace("postgresql://", "postgresql+psycopg2://", 1)
-        return value
-
-    @field_validator("cors_origins", mode="before")
-    @classmethod
-    def split_cors_origins(cls, value: str | list[str]) -> list[str]:
-        if isinstance(value, str):
-            return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
 
