@@ -1,0 +1,33 @@
+from app.models.entities import (
+    AdmissionDetails,
+    Application,
+    ApplicationStatus,
+    Chat,
+    ChatMessage,
+    EducationDetails,
+    Folder,
+    FolderItem,
+    Notification,
+    PaymentType,
+    Rejection,
+    Role,
+    Specialty,
+    User,
+)
+
+__all__ = [
+    "AdmissionDetails",
+    "Application",
+    "ApplicationStatus",
+    "Chat",
+    "ChatMessage",
+    "EducationDetails",
+    "Folder",
+    "FolderItem",
+    "Notification",
+    "PaymentType",
+    "Rejection",
+    "Role",
+    "Specialty",
+    "User",
+]
