@@ -20,6 +20,17 @@ from app.models import (
 from app.services.workflow import ensure_folder_path, move_application_to_folder
 
 DEFAULT_PASSWORD = "admin12345"
+SPECIALTY_ITEMS = [
+    ("4S04110102 Бухгалтер", "04110100 Учет и аудит"),
+    ("4S04140103 Бухгалтер-кассир", "04110100 Учет и аудит"),
+    ("4S04140103 Маркетолог", "04140100 Маркетинг"),
+    ("4S06130103 Разработчик программного обеспечения", "06130100 Программное обеспечение"),
+    ("4S06130105 Техник информационных систем", "06130100 Программное обеспечение"),
+    ("4S07161304 Техник-механик", "07161300 Техническое обслуживание, ремонт и эксплуатация автомобильного транспорта"),
+    ("3W07161303 Мастер по ремонту автомобильного транспорта", "07161300 Техническое обслуживание, ремонт и эксплуатация автомобильного транспорта"),
+    ("4S04120103 Менеджер по банковским операциям", "04120100 Банковское и страховое дело"),
+    ("4S04130101 Менеджер", "04130100 Менеджмент"),
+]
 
 
 def get_or_create_user(db: Session, full_name: str, email: str, role: Role) -> User:
@@ -44,15 +55,15 @@ def seed_users(db: Session) -> dict[str, User]:
 
 
 def seed_specialties(db: Session) -> None:
-    items = [
-        ("Информационные системы", "Техник-программист"),
-        ("Вычислительная техника и ПО", "Техник по программному обеспечению"),
-        ("Экономика", "Экономист"),
-        ("Учет и аудит", "Бухгалтер"),
-        ("Техническое обслуживание", "Техник-механик"),
-    ]
-    for name, qualification in items:
-        if not db.scalar(select(Specialty).where(Specialty.name == name)):
+    valid_names = {name for name, _ in SPECIALTY_ITEMS}
+    for specialty in db.scalars(select(Specialty)).all():
+        if specialty.name not in valid_names:
+            db.delete(specialty)
+    for name, qualification in SPECIALTY_ITEMS:
+        specialty = db.scalar(select(Specialty).where(Specialty.name == name))
+        if specialty:
+            specialty.qualification = qualification
+        else:
             db.add(Specialty(name=name, qualification=qualification))
 
 
@@ -95,8 +106,8 @@ def seed_applications(db: Session, users: dict[str, User]) -> None:
         "+7 701 111 22 33",
         ApplicationStatus.new,
     )
-    app1.admission_details.specialty = "Информационные системы"
-    app1.admission_details.qualification = "Техник-программист"
+    app1.admission_details.specialty = "4S06130103 Разработчик программного обеспечения"
+    app1.admission_details.qualification = "06130100 Программное обеспечение"
     move_application_to_folder(db, app1.id, ensure_folder_path(db, ["Приемная комиссия", "Новые заявки"]))
 
     app2 = ensure_application(
@@ -108,8 +119,8 @@ def seed_applications(db: Session, users: dict[str, User]) -> None:
         "+7 702 444 55 66",
         ApplicationStatus.in_admissions_review,
     )
-    app2.admission_details.specialty = "Экономика"
-    app2.admission_details.qualification = "Экономист"
+    app2.admission_details.specialty = "4S04130101 Менеджер"
+    app2.admission_details.qualification = "04130100 Менеджмент"
     app2.admission_details.base_class = "9 класс"
     move_application_to_folder(db, app2.id, ensure_folder_path(db, ["Приемная комиссия", "В обработке"]))
 
@@ -122,6 +133,8 @@ def seed_applications(db: Session, users: dict[str, User]) -> None:
         "+7 775 777 88 99",
         ApplicationStatus.completed,
     )
+    app3.admission_details.specialty = "4S04110102 Бухгалтер"
+    app3.admission_details.qualification = "04110100 Учет и аудит"
     if not app3.education_details:
         db.add(
             EducationDetails(

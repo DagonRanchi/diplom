@@ -455,6 +455,9 @@ export function FileManagerPage() {
 }
 
 type DetailsTab = "main" | "admissions" | "education" | "student";
+type RootEditableField = "iin" | "birth_date" | "full_name" | "email" | "phone";
+type AdmissionEditableField = "benefit_group" | "residence_address" | "base_class" | "qualification" | "specialty";
+type EducationEditableField = "curator_id" | "group_number" | "course" | "payment_type" | "is_state_grant";
 
 export function ApplicationDetailsPage() {
   const { token, user } = useAuth();
@@ -466,6 +469,9 @@ export function ApplicationDetailsPage() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
   const [activeTab, setActiveTab] = useState<DetailsTab>("main");
+  const [dirtyRootFields, setDirtyRootFields] = useState<RootEditableField[]>([]);
+  const [dirtyAdmissionFields, setDirtyAdmissionFields] = useState<AdmissionEditableField[]>([]);
+  const [dirtyEducationFields, setDirtyEducationFields] = useState<EducationEditableField[]>([]);
 
   const bulkApplicationIds = useMemo(() => {
     const raw = new URLSearchParams(location.search).get("bulk");
@@ -486,18 +492,51 @@ export function ApplicationDetailsPage() {
   };
 
   useEffect(() => { void load(); }, [token, applicationId]);
-  useEffect(() => { setActiveTab("main"); }, [applicationId]);
+  useEffect(() => {
+    setActiveTab("main");
+    setDirtyRootFields([]);
+    setDirtyAdmissionFields([]);
+    setDirtyEducationFields([]);
+  }, [applicationId, location.search]);
 
-  const updateRoot = (field: keyof Application, value: string) => {
+  const updateRoot = (field: RootEditableField, value: string) => {
     setApp((current) => current ? { ...current, [field]: value } : current);
+    setDirtyRootFields((current) => current.includes(field) ? current : [...current, field]);
   };
 
-  const updateAdmission = (field: keyof NonNullable<Application["admission_details"]>, value: string) => {
+  const updateAdmission = (field: AdmissionEditableField, value: string) => {
     setApp((current) => current ? { ...current, admission_details: { id: current.admission_details?.id ?? 0, ...current.admission_details, [field]: value } } : current);
+    setDirtyAdmissionFields((current) => current.includes(field) ? current : [...current, field]);
   };
 
-  const updateEducation = (field: keyof NonNullable<Application["education_details"]>, value: string | boolean | number | null) => {
+  const updateEducation = (field: EducationEditableField, value: string | boolean | number | null) => {
     setApp((current) => current ? { ...current, education_details: { id: current.education_details?.id ?? 0, is_state_grant: false, ...current.education_details, [field]: value } } : current);
+    setDirtyEducationFields((current) => current.includes(field) ? current : [...current, field]);
+  };
+
+  const buildBulkApplicationUpdate = () => {
+    if (!app) return {};
+    const update: Record<string, unknown> = {};
+    dirtyRootFields.forEach((field) => {
+      update[field] = app[field];
+    });
+    if (dirtyAdmissionFields.length) {
+      const admissionUpdate: Record<string, unknown> = {};
+      dirtyAdmissionFields.forEach((field) => {
+        admissionUpdate[field] = app.admission_details?.[field] ?? null;
+      });
+      update.admission_details = admissionUpdate;
+    }
+    return update;
+  };
+
+  const buildBulkEducationUpdate = () => {
+    if (!app?.education_details) return {};
+    const update: Record<string, unknown> = {};
+    dirtyEducationFields.forEach((field) => {
+      update[field] = app.education_details?.[field] ?? null;
+    });
+    return update;
   };
 
   const saveApplication = async () => {
@@ -516,12 +555,19 @@ export function ApplicationDetailsPage() {
             admission_details: app.admission_details
           };
       if (isBulkMode) {
+        const bulkUpdate = buildBulkApplicationUpdate();
+        if (!Object.keys(bulkUpdate).length) {
+          setSaved("Нет изменений для массового применения");
+          return;
+        }
         await apiFetch<Application[]>("/admin/applications/bulk/update", {
           method: "PATCH",
           token,
-          body: JSON.stringify({ application_ids: bulkApplicationIds, update: body })
+          body: JSON.stringify({ application_ids: bulkApplicationIds, update: bulkUpdate })
         });
         await load();
+        setDirtyRootFields([]);
+        setDirtyAdmissionFields([]);
       } else {
         const updated = await apiFetch<Application>(`/admin/applications/${app.id}`, { method: "PATCH", token, body: JSON.stringify(body) });
         setApp(updated);
@@ -546,10 +592,15 @@ export function ApplicationDetailsPage() {
         is_state_grant: details.is_state_grant
       };
       if (isBulkMode) {
+        const bulkUpdate = buildBulkEducationUpdate();
+        if (!Object.keys(bulkUpdate).length) {
+          setSaved("Нет изменений для массового применения");
+          return;
+        }
         await apiFetch("/education/applications/bulk/details", {
           method: "PATCH",
           token,
-          body: JSON.stringify({ application_ids: bulkApplicationIds, update })
+          body: JSON.stringify({ application_ids: bulkApplicationIds, update: bulkUpdate })
         });
         if (complete) {
           await apiFetch("/education/applications/bulk/save", {
@@ -558,6 +609,7 @@ export function ApplicationDetailsPage() {
             body: JSON.stringify({ application_ids: bulkApplicationIds })
           });
         }
+        setDirtyEducationFields([]);
       } else {
         await apiFetch(`/education/applications/${app.id}/details`, {
           method: "PATCH",
@@ -604,6 +656,18 @@ export function ApplicationDetailsPage() {
   const isTeacher = user?.role === "teacher";
   const canEducation = user?.role === "education_admin" || user?.role === "tech_admin";
   const hasStudentSheet = ["completed", "enrolled"].includes(app.status);
+  const groupedSpecialties = Object.entries(
+    specialties.reduce<Record<string, Specialty[]>>((groups, specialty) => {
+      const qualification = specialty.qualification;
+      groups[qualification] = [...(groups[qualification] ?? []), specialty];
+      return groups;
+    }, {})
+  )
+    .sort(([left], [right]) => left.localeCompare(right, "ru"))
+    .map(([qualification, items]) => [
+      qualification,
+      items.sort((left, right) => left.name.localeCompare(right.name, "ru")),
+    ] as const);
   const curatorName = teachers.find((teacher) => teacher.id === app.education_details?.curator_id)?.full_name ?? "Не назначен";
   const paymentLabel = app.education_details?.payment_type === "free"
     ? "Бесплатно"
@@ -629,7 +693,7 @@ export function ApplicationDetailsPage() {
       {isBulkMode && (
         <div className="bulk-edit-banner">
           <strong>Сейчас вы меняете {bulkApplicationIds.length} студентов.</strong>
-          <span>Сохранение применит значения из этой анкеты ко всем выбранным карточкам.</span>
+          <span>Ко всем выбранным карточкам применятся только поля, которые вы изменили здесь.</span>
         </div>
       )}
       {error && <div className="form-error">{error}</div>}
@@ -677,7 +741,11 @@ export function ApplicationDetailsPage() {
                 updateAdmission("qualification", specialty?.qualification ?? "");
               }}>
                 <option value="">Выберите</option>
-                {specialties.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+                {groupedSpecialties.map(([qualification, items]) => (
+                  <optgroup key={qualification} label={qualification}>
+                    {items.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+                  </optgroup>
+                ))}
               </select>
             </label>
             <label><span>Квалификация</span><input value={app.admission_details?.qualification ?? ""} onChange={(e) => updateAdmission("qualification", e.target.value)} /></label>

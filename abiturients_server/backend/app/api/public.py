@@ -32,7 +32,7 @@ def get_public_application(db: Session, application_id: int, token: str | None) 
 
 @router.get("/public/college-info", response_model=CollegeInfo)
 def college_info(db: Session = Depends(get_db)) -> CollegeInfo:
-    specialties = db.query(Specialty).order_by(Specialty.name).all()
+    specialties = db.query(Specialty).order_by(Specialty.qualification, Specialty.name).all()
     return CollegeInfo(
         name="Колледж экономики и техники",
         slogan="Современное образование для практической профессии",
