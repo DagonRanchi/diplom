@@ -7,6 +7,7 @@ from app.models import Application, ApplicationStatus, Folder, Role, User
 from app.schemas.dto import (
     ApplicationAdminUpdate,
     ApplicationRead,
+    BulkApplicationUpdateRequest,
     BulkIdsRequest,
     BulkMoveRequest,
     BulkRejectRequest,
@@ -33,6 +34,44 @@ router = APIRouter(prefix="/admin/applications", tags=["Admin applications"])
 def ensure_admissions_operator(user: User) -> None:
     if user.role not in {Role.admissions_admin.value, Role.tech_admin.value}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+
+
+def apply_application_update(app: Application, payload: ApplicationAdminUpdate, user: User, db: Session) -> None:
+    data = payload.model_dump(exclude_unset=True)
+
+    if user.role == Role.assistant.value:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Assistant cannot edit applications")
+
+    if user.role == Role.teacher.value:
+        allowed = {"email", "phone"}
+        if set(data) - allowed:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Teacher can edit only contacts")
+        contact = TeacherContactUpdate(**data)
+        if contact.email is not None:
+            app.email = str(contact.email)
+        if contact.phone is not None:
+            app.phone = contact.phone
+        return
+
+    if user.role not in {Role.tech_admin.value, Role.admissions_admin.value}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+
+    next_iin = data.get("iin", app.iin)
+    next_birth_date = data.get("birth_date", app.birth_date)
+    try:
+        validate_iin_birth_date(next_iin, next_birth_date)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Неправильный ИИН")
+
+    for field in ("iin", "birth_date", "full_name", "email", "phone", "status"):
+        if field in data and data[field] is not None:
+            setattr(app, field, data[field].value if hasattr(data[field], "value") else data[field])
+
+    if payload.admission_details is not None:
+        details = get_or_create_admission_details(db, app)
+        details_data = payload.admission_details.model_dump(exclude_unset=True)
+        for field, value in details_data.items():
+            setattr(details, field, value)
 
 
 @router.get("", response_model=list[ApplicationRead])
@@ -68,47 +107,28 @@ def update_application(
     db: Session = Depends(get_db),
 ) -> ApplicationRead:
     app = get_visible_application_or_404(db, application_id, user)
-    data = payload.model_dump(exclude_unset=True)
-
-    if user.role == Role.assistant.value:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Assistant cannot edit applications")
-
-    if user.role == Role.teacher.value:
-        allowed = {"email", "phone"}
-        if set(data) - allowed:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Teacher can edit only contacts")
-        contact = TeacherContactUpdate(**data)
-        if contact.email is not None:
-            app.email = str(contact.email)
-        if contact.phone is not None:
-            app.phone = contact.phone
-        db.commit()
-        db.refresh(app)
-        return serialize_application(app)
-
-    if user.role not in {Role.tech_admin.value, Role.admissions_admin.value}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
-
-    next_iin = data.get("iin", app.iin)
-    next_birth_date = data.get("birth_date", app.birth_date)
-    try:
-        validate_iin_birth_date(next_iin, next_birth_date)
-    except ValueError:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Неправильный ИИН")
-
-    for field in ("iin", "birth_date", "full_name", "email", "phone", "status"):
-        if field in data and data[field] is not None:
-            setattr(app, field, data[field].value if hasattr(data[field], "value") else data[field])
-
-    if payload.admission_details is not None:
-        details = get_or_create_admission_details(db, app)
-        details_data = payload.admission_details.model_dump(exclude_unset=True)
-        for field, value in details_data.items():
-            setattr(details, field, value)
+    apply_application_update(app, payload, user, db)
 
     db.commit()
     db.refresh(app)
     return serialize_application(app)
+
+
+@router.patch("/bulk/update", response_model=list[ApplicationRead])
+def bulk_update_applications(
+    payload: BulkApplicationUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[ApplicationRead]:
+    result = []
+    for app_id in payload.application_ids:
+        app = get_visible_application_or_404(db, app_id, user)
+        apply_application_update(app, payload.update, user, db)
+        result.append(app)
+    db.commit()
+    for app in result:
+        db.refresh(app)
+    return [serialize_application(app) for app in result]
 
 
 @router.post("/{application_id:int}/archive", response_model=ApplicationRead)

@@ -124,3 +124,21 @@ export function EmptyState({ title, text }: { title: string; text: string }) {
     </div>
   );
 }
+
+export function SiteFooter() {
+  return (
+    <footer className="site-footer">
+      <div>
+        <strong>Усть-Каменогорский колледж экономики и техники</strong>
+        <span>070018, Республика Казахстан, г. Усть-Каменогорск, ул. Бажова, 68</span>
+      </div>
+      <div>
+        <span>Тел.: 8 (7232) 49-25-86, 49-25-87, 71-22-06, 61-90-24</span>
+        <a href="mailto:ukkaf@rambler.ru">ukkaf@rambler.ru</a>
+      </div>
+      <a href="https://cef.kafu.kz" target="_blank" rel="noreferrer" className="footer-link">
+        cef.kafu.kz
+      </a>
+    </footer>
+  );
+}

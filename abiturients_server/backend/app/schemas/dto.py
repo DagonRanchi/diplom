@@ -167,12 +167,20 @@ class BulkIdsRequest(BaseModel):
     application_ids: list[int] = Field(min_length=1)
 
 
+class BulkApplicationUpdateRequest(BulkIdsRequest):
+    update: ApplicationAdminUpdate
+
+
 class BulkRejectRequest(BulkIdsRequest):
     reason: str = Field(min_length=3, max_length=2000)
 
 
 class BulkMoveRequest(BulkIdsRequest):
     target_folder_id: int
+
+
+class BulkEducationDetailsUpdateRequest(BulkIdsRequest):
+    update: EducationDetailsUpdate
 
 
 class FolderRead(BaseModel):

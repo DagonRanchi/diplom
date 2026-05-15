@@ -226,8 +226,11 @@ admin12345
 - `POST /admin/applications/bulk/archive`
 - `POST /admin/applications/bulk/reject`
 - `POST /admin/applications/bulk/accept`
+- `PATCH /admin/applications/bulk/update`
 - `GET|PATCH /education/applications/{id}/details`
 - `POST /education/applications/{id}/save`
+- `PATCH /education/applications/bulk/details`
+- `POST /education/applications/bulk/save`
 - `GET /folders/tree`
 - `POST /folders/move-items`
 - `GET|POST /admin/chats/{id}/messages`

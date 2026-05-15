@@ -90,6 +90,7 @@ button {
   background: white;
   color: var(--blue-900);
   border: 1px solid var(--line);
+  box-shadow: 0 1px 0 rgba(18, 59, 100, 0.04), 0 6px 16px rgba(18, 59, 100, 0.08);
 }
 
 .ghost-link {
@@ -238,6 +239,37 @@ button {
   padding: 0 6vw 64px;
   display: grid;
   gap: 70px;
+}
+
+.site-footer {
+  margin-top: auto;
+  padding: 24px 6vw 30px;
+  border-top: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.76);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  flex-wrap: wrap;
+  color: var(--muted);
+}
+
+.site-footer > div {
+  display: grid;
+  gap: 5px;
+}
+
+.site-footer strong {
+  color: var(--blue-900);
+}
+
+.site-footer a {
+  color: var(--blue-700);
+  font-weight: 800;
+}
+
+.footer-link {
+  align-self: center;
 }
 
 .section-grid {
@@ -478,6 +510,14 @@ select {
   background: white;
   color: var(--ink);
   outline: none;
+}
+
+input[type="checkbox"] {
+  width: 14px;
+  height: 14px;
+  min-height: 14px;
+  padding: 0;
+  accent-color: var(--blue-700);
 }
 
 input:focus,
@@ -901,9 +941,14 @@ td span {
 
 .folder-node.active,
 .folder-node:hover,
+.folder-node.drop-target,
 .chat-list button.active,
 .chat-list button:hover {
   background: var(--blue-100);
+}
+
+.folder-node.drop-target {
+  outline: 2px solid rgba(47, 157, 226, 0.24);
 }
 
 .folder-node small,
@@ -918,27 +963,38 @@ td span {
   gap: 14px;
 }
 
+.file-grid-shell {
+  position: relative;
+  min-height: 260px;
+  padding: 2px;
+  user-select: none;
+}
+
+.selection-box {
+  position: absolute;
+  z-index: 2;
+  border: 1px solid rgba(23, 106, 167, 0.62);
+  background: rgba(47, 157, 226, 0.14);
+  pointer-events: none;
+}
+
 .file-card {
   padding: 16px;
   display: grid;
   gap: 8px;
   align-content: start;
   cursor: pointer;
+  user-select: none;
 }
 
 .file-card.selected {
-  outline: 3px solid rgba(47, 157, 226, 0.2);
+  outline: 3px solid rgba(47, 157, 226, 0.28);
+  background: #f8fcff;
 }
 
 .file-card h3 {
   margin: 0;
   color: var(--blue-900);
-}
-
-.details-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 16px;
 }
 
 .panel-form {
@@ -964,8 +1020,93 @@ td span {
 }
 
 .checkbox-line input {
-  width: 18px;
-  min-height: 18px;
+  width: 15px;
+  height: 15px;
+  min-height: 15px;
+}
+
+.bulk-edit-banner {
+  display: grid;
+  gap: 3px;
+  padding: 16px 18px;
+  border: 1px solid #f0c54a;
+  border-radius: 8px;
+  background: #fff6cf;
+  color: #735c0f;
+}
+
+.details-shell {
+  border-radius: 8px;
+  background: white;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.details-tabs {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 14px 0;
+  border-bottom: 1px solid var(--line);
+  background: #f8fbfe;
+}
+
+.details-tab {
+  min-height: 40px;
+  border: 1px solid var(--line);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  padding: 0 14px;
+  background: #eef6fb;
+  color: var(--blue-900);
+  font-weight: 800;
+}
+
+.details-tab.active {
+  background: white;
+  position: relative;
+  top: 1px;
+}
+
+.tab-panel {
+  border: 0;
+  box-shadow: none;
+  border-radius: 0;
+  padding: 22px;
+}
+
+.student-sheet {
+  padding: 22px;
+}
+
+.student-sheet dl {
+  margin: 0;
+  display: grid;
+  gap: 0;
+}
+
+.student-sheet dl > div {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.35fr) minmax(0, 1fr);
+  gap: 18px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.student-sheet dl > div:last-child {
+  border-bottom: 0;
+}
+
+.student-sheet dt {
+  color: var(--muted);
+  font-weight: 800;
+}
+
+.student-sheet dd {
+  margin: 0;
+  color: var(--blue-900);
+  font-weight: 800;
 }
 
 .chat-list {
@@ -1071,6 +1212,20 @@ td span {
   .panel-form,
   .chat-input {
     grid-template-columns: 1fr;
+  }
+
+  .details-tabs {
+    justify-content: stretch;
+    overflow-x: auto;
+  }
+
+  .details-tab {
+    white-space: nowrap;
+  }
+
+  .student-sheet dl > div {
+    grid-template-columns: 1fr;
+    gap: 4px;
   }
 
   .span-2 {

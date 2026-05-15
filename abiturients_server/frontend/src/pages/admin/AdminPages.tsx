@@ -13,7 +13,7 @@ import {
   UserPlus,
   X,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { DragEvent as ReactDragEvent, FormEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   apiFetch,
@@ -209,7 +209,7 @@ export function ApplicationsPage() {
             {apps.map((app) => (
               <tr key={app.id}>
                 <td><input type="checkbox" checked={selected.includes(app.id)} onChange={() => toggle(app.id)} /></td>
-                <td><Link to={`/admin/applications/${app.id}`}>{app.full_name}</Link></td>
+                <td><Link to={`/admin/applications/${app.id}${selected.includes(app.id) && selected.length > 1 ? `?bulk=${selected.join(",")}` : ""}`}>{app.full_name}</Link></td>
                 <td>{app.iin}</td>
                 <td>{app.phone}<br /><span>{app.email}</span></td>
                 <td>{app.admission_details?.specialty ?? "Не выбрано"}</td>
@@ -227,11 +227,15 @@ export function ApplicationsPage() {
 
 export function FileManagerPage() {
   const { token } = useAuth();
+  const navigate = useNavigate();
   const [tree, setTree] = useState<FolderNode[]>([]);
   const [folderId, setFolderId] = useState<number | null>(null);
   const [apps, setApps] = useState<Application[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
-  const [targetFolderId, setTargetFolderId] = useState("");
+  const [draggingIds, setDraggingIds] = useState<number[]>([]);
+  const [dropTargetId, setDropTargetId] = useState<number | null>(null);
+  const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; x: number; y: number } | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
 
   const folders = useMemo(() => flattenFolders(tree), [tree]);
 
@@ -275,20 +279,123 @@ export function FileManagerPage() {
     await loadTree();
   };
 
-  const moveSelected = async () => {
-    if (!token || !targetFolderId || !selected.length) return;
+  const moveApplications = async (applicationIds: number[], targetFolderId: number) => {
+    if (!token || !targetFolderId || !applicationIds.length) return;
     await apiFetch("/folders/move-items", {
       method: "POST",
       token,
-      body: JSON.stringify({ application_ids: selected, target_folder_id: Number(targetFolderId) })
+      body: JSON.stringify({ application_ids: applicationIds, target_folder_id: targetFolderId })
     });
     await loadApps();
     await loadTree();
   };
 
+  const startSelection = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest(".file-card")) return;
+    const grid = gridRef.current;
+    if (!grid) return;
+    const bounds = grid.getBoundingClientRect();
+    const startX = event.clientX - bounds.left;
+    const startY = event.clientY - bounds.top;
+    setSelected([]);
+    setSelectionBox({ startX, startY, x: startX, y: startY });
+
+    const selectInsideBox = (x: number, y: number) => {
+      const left = Math.min(startX, x);
+      const top = Math.min(startY, y);
+      const right = Math.max(startX, x);
+      const bottom = Math.max(startY, y);
+      const ids = Array.from(grid.querySelectorAll<HTMLElement>("[data-app-id]"))
+        .filter((card) => {
+          const rect = card.getBoundingClientRect();
+          const cardLeft = rect.left - bounds.left;
+          const cardTop = rect.top - bounds.top;
+          const cardRight = cardLeft + rect.width;
+          const cardBottom = cardTop + rect.height;
+          return cardLeft < right && cardRight > left && cardTop < bottom && cardBottom > top;
+        })
+        .map((card) => Number(card.dataset.appId))
+        .filter(Boolean);
+      setSelected(ids);
+    };
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const x = moveEvent.clientX - bounds.left;
+      const y = moveEvent.clientY - bounds.top;
+      setSelectionBox({ startX, startY, x, y });
+      selectInsideBox(x, y);
+    };
+
+    const onMouseUp = () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      setSelectionBox(null);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  };
+
+  const openApplication = (appId: number) => {
+    const bulkIds = selected.includes(appId) && selected.length > 1 ? selected : [appId];
+    const query = bulkIds.length > 1 ? `?bulk=${bulkIds.join(",")}` : "";
+    navigate(`/admin/applications/${appId}${query}`);
+  };
+
+  const clickCard = (appId: number, event: ReactMouseEvent<HTMLElement>) => {
+    if (event.ctrlKey || event.metaKey) {
+      setSelected((current) => current.includes(appId) ? current.filter((id) => id !== appId) : [...current, appId]);
+      return;
+    }
+    setSelected((current) => current.includes(appId) && current.length > 1 ? current : [appId]);
+  };
+
+  const beginDrag = (appId: number, event: ReactDragEvent<HTMLElement>) => {
+    const ids = selected.includes(appId) ? selected : [appId];
+    if (!selected.includes(appId)) setSelected(ids);
+    setDraggingIds(ids);
+    event.dataTransfer.effectAllowed = "move";
+    event.dataTransfer.setData("application/json", JSON.stringify(ids));
+  };
+
+  const endDrag = () => {
+    setDraggingIds([]);
+    setDropTargetId(null);
+  };
+
+  const selectionStyle = selectionBox
+    ? {
+        left: Math.min(selectionBox.startX, selectionBox.x),
+        top: Math.min(selectionBox.startY, selectionBox.y),
+        width: Math.abs(selectionBox.x - selectionBox.startX),
+        height: Math.abs(selectionBox.y - selectionBox.startY),
+      }
+    : undefined;
+
   const renderNode = (node: FolderNode, depth = 0) => (
     <div key={node.id}>
-      <button className={node.id === folderId ? "folder-node active" : "folder-node"} style={{ paddingLeft: 12 + depth * 14 }} onClick={() => setFolderId(node.id)}>
+      <button
+        className={[
+          "folder-node",
+          node.id === folderId ? "active" : "",
+          node.id === dropTargetId ? "drop-target" : "",
+        ].filter(Boolean).join(" ")}
+        style={{ paddingLeft: 12 + depth * 14 }}
+        onClick={() => setFolderId(node.id)}
+        onDragOver={(event) => {
+          if (!draggingIds.length) return;
+          event.preventDefault();
+          setDropTargetId(node.id);
+        }}
+        onDragLeave={() => setDropTargetId((current) => current === node.id ? null : current)}
+        onDrop={(event) => {
+          event.preventDefault();
+          const payload = event.dataTransfer.getData("application/json");
+          const ids = payload ? JSON.parse(payload) as number[] : draggingIds;
+          void moveApplications(ids, node.id);
+          endDrag();
+        }}
+      >
         <ChevronRight size={14} />
         <span>{node.name}</span>
         <small>{node.item_count}</small>
@@ -319,36 +426,54 @@ export function FileManagerPage() {
         </div>
         <div className="bulk-panel">
           <span>Выбрано: {selected.length}</span>
-          <select value={targetFolderId} onChange={(event) => setTargetFolderId(event.target.value)}>
-            <option value="">Куда переместить</option>
-            {folders.map((folder) => <option key={folder.id} value={folder.id}>{folder.name}</option>)}
-          </select>
-          <button onClick={moveSelected}>Переместить</button>
+          <span className="muted">Выделите рамкой или кликом, затем перетащите в папку слева.</span>
         </div>
-        <div className="file-grid">
-          {apps.map((app) => (
-            <article key={app.id} className={selected.includes(app.id) ? "file-card selected" : "file-card"} onClick={() => setSelected((current) => current.includes(app.id) ? current.filter((id) => id !== app.id) : [...current, app.id])}>
-              <input type="checkbox" checked={selected.includes(app.id)} readOnly />
-              <h3>{app.full_name}</h3>
-              <p>{app.iin}</p>
-              <StatusBadge status={app.status} />
-              <Link to={`/admin/applications/${app.id}`}>Открыть анкету</Link>
-            </article>
-          ))}
+        <div className="file-grid-shell" ref={gridRef} onMouseDown={startSelection}>
+          {selectionBox && <div className="selection-box" style={selectionStyle} />}
+          <div className="file-grid">
+            {apps.map((app) => (
+              <article
+                key={app.id}
+                data-app-id={app.id}
+                draggable
+                className={selected.includes(app.id) ? "file-card selected" : "file-card"}
+                onClick={(event) => clickCard(app.id, event)}
+                onDoubleClick={() => openApplication(app.id)}
+                onDragStart={(event) => beginDrag(app.id, event)}
+                onDragEnd={endDrag}
+              >
+                <h3>{app.full_name}</h3>
+                <p>{app.iin}</p>
+                <StatusBadge status={app.status} />
+              </article>
+            ))}
+          </div>
         </div>
       </main>
     </section>
   );
 }
 
+type DetailsTab = "main" | "admissions" | "education" | "student";
+
 export function ApplicationDetailsPage() {
   const { token, user } = useAuth();
   const { applicationId } = useParams();
+  const location = useLocation();
   const [app, setApp] = useState<Application | null>(null);
   const [teachers, setTeachers] = useState<User[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
+  const [activeTab, setActiveTab] = useState<DetailsTab>("main");
+
+  const bulkApplicationIds = useMemo(() => {
+    const raw = new URLSearchParams(location.search).get("bulk");
+    if (!raw) return [];
+    return Array.from(new Set(raw.split(",").map((item) => Number(item)).filter((item) => Number.isInteger(item) && item > 0)));
+  }, [location.search]);
+
+  const isBulkMode = bulkApplicationIds.length > 1;
 
   const load = async () => {
     if (!token || !applicationId) return;
@@ -361,6 +486,7 @@ export function ApplicationDetailsPage() {
   };
 
   useEffect(() => { void load(); }, [token, applicationId]);
+  useEffect(() => { setActiveTab("main"); }, [applicationId]);
 
   const updateRoot = (field: keyof Application, value: string) => {
     setApp((current) => current ? { ...current, [field]: value } : current);
@@ -389,9 +515,18 @@ export function ApplicationDetailsPage() {
             phone: app.phone,
             admission_details: app.admission_details
           };
-      const updated = await apiFetch<Application>(`/admin/applications/${app.id}`, { method: "PATCH", token, body: JSON.stringify(body) });
-      setApp(updated);
-      setSaved("Сохранено");
+      if (isBulkMode) {
+        await apiFetch<Application[]>("/admin/applications/bulk/update", {
+          method: "PATCH",
+          token,
+          body: JSON.stringify({ application_ids: bulkApplicationIds, update: body })
+        });
+        await load();
+      } else {
+        const updated = await apiFetch<Application>(`/admin/applications/${app.id}`, { method: "PATCH", token, body: JSON.stringify(body) });
+        setApp(updated);
+      }
+      setSaved(isBulkMode ? `Сохранено для ${bulkApplicationIds.length} студентов` : "Сохранено");
     } catch (err) {
       setError(apiMessage(err));
     }
@@ -400,40 +535,87 @@ export function ApplicationDetailsPage() {
   const saveEducation = async (complete = false) => {
     if (!token || !app?.education_details) return;
     setError("");
-    const details = app.education_details;
-    await apiFetch(`/education/applications/${app.id}/details`, {
-      method: "PATCH",
-      token,
-      body: JSON.stringify({
+    setSaved("");
+    try {
+      const details = app.education_details;
+      const update = {
         curator_id: details.curator_id,
         group_number: details.group_number,
         course: details.course,
         payment_type: details.payment_type,
         is_state_grant: details.is_state_grant
-      })
-    });
-    if (complete) {
-      await apiFetch<Application>(`/education/applications/${app.id}/save`, { method: "POST", token });
+      };
+      if (isBulkMode) {
+        await apiFetch("/education/applications/bulk/details", {
+          method: "PATCH",
+          token,
+          body: JSON.stringify({ application_ids: bulkApplicationIds, update })
+        });
+        if (complete) {
+          await apiFetch("/education/applications/bulk/save", {
+            method: "POST",
+            token,
+            body: JSON.stringify({ application_ids: bulkApplicationIds })
+          });
+        }
+      } else {
+        await apiFetch(`/education/applications/${app.id}/details`, {
+          method: "PATCH",
+          token,
+          body: JSON.stringify(update)
+        });
+        if (complete) {
+          await apiFetch<Application>(`/education/applications/${app.id}/save`, { method: "POST", token });
+        }
+      }
+      await load();
+      setSaved(isBulkMode ? `Сохранено для ${bulkApplicationIds.length} студентов` : "Сохранено");
+    } catch (err) {
+      setError(apiMessage(err));
     }
-    await load();
-    setSaved("Сохранено");
   };
 
   const action = async (name: "archive" | "accept" | "reject") => {
     if (!token || !app) return;
-    if (name === "reject") {
-      const reason = window.prompt("Причина отказа");
-      if (!reason) return;
-      await apiFetch(`/admin/applications/${app.id}/reject`, { method: "POST", token, body: JSON.stringify({ reason }) });
-    } else {
-      await apiFetch(`/admin/applications/${app.id}/${name}`, { method: "POST", token });
+    setError("");
+    try {
+      if (name === "reject") {
+        const reason = window.prompt("Причина отказа");
+        if (!reason) return;
+        await apiFetch(isBulkMode ? "/admin/applications/bulk/reject" : `/admin/applications/${app.id}/reject`, {
+          method: "POST",
+          token,
+          body: JSON.stringify(isBulkMode ? { application_ids: bulkApplicationIds, reason } : { reason })
+        });
+      } else {
+        await apiFetch(isBulkMode ? `/admin/applications/bulk/${name}` : `/admin/applications/${app.id}/${name}`, {
+          method: "POST",
+          token,
+          body: isBulkMode ? JSON.stringify({ application_ids: bulkApplicationIds }) : undefined
+        });
+      }
+      await load();
+    } catch (err) {
+      setError(apiMessage(err));
     }
-    await load();
   };
 
   if (!app) return <div className="admin-page"><EmptyState title="Загрузка" text="Открываем анкету." /></div>;
   const isTeacher = user?.role === "teacher";
   const canEducation = user?.role === "education_admin" || user?.role === "tech_admin";
+  const hasStudentSheet = ["completed", "enrolled"].includes(app.status);
+  const curatorName = teachers.find((teacher) => teacher.id === app.education_details?.curator_id)?.full_name ?? "Не назначен";
+  const paymentLabel = app.education_details?.payment_type === "free"
+    ? "Бесплатно"
+    : app.education_details?.payment_type === "paid"
+      ? "Платно"
+      : "Не указано";
+  const tabs: { id: DetailsTab; label: string }[] = [
+    { id: "main", label: "Основные данные" },
+    ...(!isTeacher ? [{ id: "admissions" as DetailsTab, label: "Приемная комиссия" }] : []),
+    ...(canEducation ? [{ id: "education" as DetailsTab, label: "Учебная часть" }] : []),
+    ...(hasStudentSheet ? [{ id: "student" as DetailsTab, label: "Данные студента" }] : []),
+  ];
 
   return (
     <section className="admin-page details-page">
@@ -444,26 +626,46 @@ export function ApplicationDetailsPage() {
         </div>
         <StatusBadge status={app.status} />
       </div>
+      {isBulkMode && (
+        <div className="bulk-edit-banner">
+          <strong>Сейчас вы меняете {bulkApplicationIds.length} студентов.</strong>
+          <span>Сохранение применит значения из этой анкеты ко всем выбранным карточкам.</span>
+        </div>
+      )}
       {error && <div className="form-error">{error}</div>}
       {saved && <div className="form-success">{saved}</div>}
-      <div className="details-grid">
-        <form className="panel-form">
-          <h3>Основные данные</h3>
-          {!isTeacher && (
-            <>
-              <label><span>ИИН</span><input value={app.iin} onChange={(e) => updateRoot("iin", e.target.value.replace(/\D/g, "").slice(0, 12))} /></label>
-              <label><span>Дата рождения</span><input type="date" value={app.birth_date} onChange={(e) => updateRoot("birth_date", e.target.value)} /></label>
-              <label><span>ФИО</span><input value={app.full_name} onChange={(e) => updateRoot("full_name", e.target.value)} /></label>
-            </>
-          )}
-          <label><span>Email</span><input value={app.email} onChange={(e) => updateRoot("email", e.target.value)} /></label>
-          <label><span>Телефон</span><input value={app.phone} onChange={(e) => updateRoot("phone", e.target.value)} /></label>
-          <button type="button" className="primary-button" onClick={saveApplication}><Save size={16} /> Сохранить</button>
-        </form>
 
-        {!isTeacher && (
-          <form className="panel-form">
-            <h3>Приемная комиссия</h3>
+      <section className="details-shell">
+        <div className="details-tabs">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              type="button"
+              className={tab.id === activeTab ? "details-tab active" : "details-tab"}
+              onClick={() => setActiveTab(tab.id)}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {activeTab === "main" && (
+          <form className="panel-form tab-panel">
+            {!isTeacher && (
+              <>
+                <label><span>ИИН</span><input value={app.iin} onChange={(e) => updateRoot("iin", e.target.value.replace(/\D/g, "").slice(0, 12))} /></label>
+                <label><span>Дата рождения</span><input type="date" value={app.birth_date} onChange={(e) => updateRoot("birth_date", e.target.value)} /></label>
+                <label><span>ФИО</span><input value={app.full_name} onChange={(e) => updateRoot("full_name", e.target.value)} /></label>
+              </>
+            )}
+            <label><span>Email</span><input value={app.email} onChange={(e) => updateRoot("email", e.target.value)} /></label>
+            <label><span>Телефон</span><input value={app.phone} onChange={(e) => updateRoot("phone", e.target.value)} /></label>
+            <button type="button" className="primary-button" onClick={saveApplication}><Save size={16} /> Сохранить</button>
+          </form>
+        )}
+
+        {activeTab === "admissions" && !isTeacher && (
+          <form className="panel-form tab-panel">
             <label><span>Льготная группа</span><input value={app.admission_details?.benefit_group ?? ""} onChange={(e) => updateAdmission("benefit_group", e.target.value)} /></label>
             <label><span>Место жительства</span><input value={app.admission_details?.residence_address ?? ""} onChange={(e) => updateAdmission("residence_address", e.target.value)} /></label>
             <label><span>База поступления</span><input value={app.admission_details?.base_class ?? ""} onChange={(e) => updateAdmission("base_class", e.target.value)} placeholder="9 класс / 11 класс" /></label>
@@ -480,6 +682,7 @@ export function ApplicationDetailsPage() {
             </label>
             <label><span>Квалификация</span><input value={app.admission_details?.qualification ?? ""} onChange={(e) => updateAdmission("qualification", e.target.value)} /></label>
             <div className="action-row">
+              <button type="button" onClick={() => saveApplication()}><Save size={16} /> Сохранить</button>
               <button type="button" onClick={() => action("archive")}><Archive size={16} /> Архивировать</button>
               <button type="button" onClick={() => action("reject")}><X size={16} /> Отклонить</button>
               <button type="button" onClick={() => action("accept")}><Check size={16} /> Принять</button>
@@ -487,9 +690,8 @@ export function ApplicationDetailsPage() {
           </form>
         )}
 
-        {canEducation && (
-          <form className="panel-form">
-            <h3>Учебная часть</h3>
+        {activeTab === "education" && canEducation && (
+          <form className="panel-form tab-panel">
             <label>
               <span>Куратор</span>
               <select value={app.education_details?.curator_id ?? ""} onChange={(e) => updateEducation("curator_id", e.target.value ? Number(e.target.value) : null)}>
@@ -514,7 +716,27 @@ export function ApplicationDetailsPage() {
             </div>
           </form>
         )}
-      </div>
+
+        {activeTab === "student" && hasStudentSheet && (
+          <div className="student-sheet">
+            <dl>
+              <div><dt>ИИН</dt><dd>{app.iin}</dd></div>
+              <div><dt>ФИО</dt><dd>{app.full_name}</dd></div>
+              <div><dt>Дата рождения</dt><dd>{formatDate(app.birth_date)}</dd></div>
+              <div><dt>Место жительства</dt><dd>{app.admission_details?.residence_address ?? "Не указано"}</dd></div>
+              <div><dt>Email</dt><dd>{app.email}</dd></div>
+              <div><dt>Телефон</dt><dd>{app.phone}</dd></div>
+              <div><dt>База поступления</dt><dd>{app.admission_details?.base_class ?? "Не указано"}</dd></div>
+              <div><dt>Курс</dt><dd>{app.education_details?.course ?? "Не указано"}</dd></div>
+              <div><dt>Группа</dt><dd>{app.education_details?.group_number ?? "Не указана"}</dd></div>
+              <div><dt>Куратор</dt><dd>{curatorName}</dd></div>
+              <div><dt>Квалификация</dt><dd>{app.admission_details?.qualification ?? "Не указана"}</dd></div>
+              <div><dt>Специальность</dt><dd>{app.admission_details?.specialty ?? "Не указана"}</dd></div>
+              <div><dt>Оплата</dt><dd>{paymentLabel}</dd></div>
+            </dl>
+          </div>
+        )}
+      </section>
     </section>
   );
 }

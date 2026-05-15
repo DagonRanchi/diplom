@@ -6,7 +6,13 @@ from sqlalchemy.orm import Session
 from app.core.rbac import get_current_user
 from app.db.session import get_db
 from app.models import Application, ApplicationStatus, PaymentType, Role, User
-from app.schemas.dto import ApplicationRead, EducationDetailsRead, EducationDetailsUpdate
+from app.schemas.dto import (
+    ApplicationRead,
+    BulkEducationDetailsUpdateRequest,
+    BulkIdsRequest,
+    EducationDetailsRead,
+    EducationDetailsUpdate,
+)
 from app.services.serializers import serialize_application
 from app.services.workflow import (
     ensure_folder_path,
@@ -20,24 +26,18 @@ from app.services.workflow import (
 router = APIRouter(prefix="/education", tags=["Education"])
 
 
-@router.get("/applications", response_model=list[ApplicationRead])
-def education_applications(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[ApplicationRead]:
-    if user.role not in {Role.education_admin.value, Role.tech_admin.value, Role.teacher.value}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
-    apps = query_applications_for_user(db, user).order_by(Application.created_at.desc()).all()
-    return [serialize_application(app) for app in apps]
-
-
-@router.patch("/applications/{application_id}/details", response_model=EducationDetailsRead)
-def update_education_details(
-    application_id: int,
-    payload: EducationDetailsUpdate,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> EducationDetailsRead:
+def ensure_education_operator(user: User) -> None:
     if user.role not in {Role.education_admin.value, Role.tech_admin.value}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
-    app = get_visible_application_or_404(db, application_id, user)
+
+
+def apply_education_details_update(
+    app: Application,
+    payload: EducationDetailsUpdate,
+    user: User,
+    db: Session,
+) -> EducationDetailsRead:
+    ensure_education_operator(user)
     details = get_or_create_education_details(db, app)
     data = payload.model_dump(exclude_unset=True)
     if data.get("curator_id"):
@@ -48,20 +48,11 @@ def update_education_details(
         setattr(details, field, value.value if isinstance(value, PaymentType) else value)
     if app.status == ApplicationStatus.accepted_by_admissions.value:
         app.status = ApplicationStatus.education_review.value
-    db.commit()
-    db.refresh(details)
     return details
 
 
-@router.post("/applications/{application_id}/save", response_model=ApplicationRead)
-def save_education_application(
-    application_id: int,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> ApplicationRead:
-    if user.role not in {Role.education_admin.value, Role.tech_admin.value}:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
-    app = get_visible_application_or_404(db, application_id, user)
+def complete_education_application(app: Application, user: User, db: Session) -> Application:
+    ensure_education_operator(user)
     details = get_or_create_education_details(db, app)
     missing = []
     if not details.curator_id:
@@ -88,6 +79,71 @@ def save_education_application(
             "student_assigned",
             app.id,
         )
+    return app
+
+
+@router.get("/applications", response_model=list[ApplicationRead])
+def education_applications(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[ApplicationRead]:
+    if user.role not in {Role.education_admin.value, Role.tech_admin.value, Role.teacher.value}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+    apps = query_applications_for_user(db, user).order_by(Application.created_at.desc()).all()
+    return [serialize_application(app) for app in apps]
+
+
+@router.patch("/applications/{application_id}/details", response_model=EducationDetailsRead)
+def update_education_details(
+    application_id: int,
+    payload: EducationDetailsUpdate,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> EducationDetailsRead:
+    app = get_visible_application_or_404(db, application_id, user)
+    details = apply_education_details_update(app, payload, user, db)
+    db.commit()
+    db.refresh(details)
+    return details
+
+
+@router.patch("/applications/bulk/details", response_model=list[EducationDetailsRead])
+def bulk_update_education_details(
+    payload: BulkEducationDetailsUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[EducationDetailsRead]:
+    result = []
+    for app_id in payload.application_ids:
+        app = get_visible_application_or_404(db, app_id, user)
+        result.append(apply_education_details_update(app, payload.update, user, db))
+    db.commit()
+    for details in result:
+        db.refresh(details)
+    return result
+
+
+@router.post("/applications/{application_id}/save", response_model=ApplicationRead)
+def save_education_application(
+    application_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApplicationRead:
+    app = get_visible_application_or_404(db, application_id, user)
+    complete_education_application(app, user, db)
     db.commit()
     db.refresh(app)
     return serialize_application(app)
+
+
+@router.post("/applications/bulk/save", response_model=list[ApplicationRead])
+def bulk_save_education_applications(
+    payload: BulkIdsRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[ApplicationRead]:
+    result = []
+    for app_id in payload.application_ids:
+        app = get_visible_application_or_404(db, app_id, user)
+        result.append(complete_education_application(app, user, db))
+    db.commit()
+    for app in result:
+        db.refresh(app)
+    return [serialize_application(app) for app in result]

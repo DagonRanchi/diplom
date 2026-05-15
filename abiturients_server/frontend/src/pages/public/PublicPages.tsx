@@ -2,6 +2,7 @@ import { ArrowRight, CheckCircle2, HelpCircle, MessageCircle, Send, Sparkles } f
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { apiFetch, apiMessage, ChatMessage, CollegeInfo, Specialty } from "../../api/client";
+import { SiteFooter } from "../../components/Layout";
 
 function iinIsValid(iin: string, birthDate: string) {
   if (!/^\d{12}$/.test(iin) || !birthDate) return false;
@@ -144,6 +145,7 @@ export function HomePage() {
           <Link to="/apply" className="primary-button">Начать поступление <ArrowRight size={18} /></Link>
         </section>
       </main>
+      <SiteFooter />
     </div>
   );
 }
@@ -233,6 +235,7 @@ export function ApplyPage() {
           </div>
         </div>
       )}
+      <SiteFooter />
     </div>
   );
 }
@@ -312,6 +315,7 @@ export function PublicChatPage() {
           </>
         )}
       </section>
+      <SiteFooter />
     </div>
   );
 }
