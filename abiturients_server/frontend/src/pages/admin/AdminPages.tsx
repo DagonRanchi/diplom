@@ -2,6 +2,8 @@ import {
   Archive,
   Check,
   ChevronRight,
+  Download,
+  Folder as FolderIcon,
   FolderPlus,
   MessageCircle,
   Pencil,
@@ -10,12 +12,14 @@ import {
   Save,
   Search,
   Trash2,
+  UserMinus,
   UserPlus,
   X,
 } from "lucide-react";
 import { DragEvent as ReactDragEvent, FormEvent, MouseEvent as ReactMouseEvent, useEffect, useMemo, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
+  API_URL,
   apiFetch,
   apiMessage,
   Application,
@@ -31,6 +35,8 @@ import { EmptyState, StatusBadge } from "../../components/Layout";
 import { useAuth } from "../../context/AuthContext";
 
 const statusOptions = Object.keys(statusLabels);
+const admissionsActionableStatuses = new Set(["new", "in_admissions_review"]);
+const educationCompletableStatuses = new Set(["accepted_by_admissions", "education_review"]);
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("ru-RU").format(new Date(value));
@@ -38,6 +44,23 @@ function formatDate(value: string) {
 
 function flattenFolders(nodes: FolderNode[]): FolderNode[] {
   return nodes.flatMap((node) => [node, ...flattenFolders(node.children ?? [])]);
+}
+
+function findFolderPath(nodes: FolderNode[], folderId: number, path: FolderNode[] = []): FolderNode[] {
+  for (const node of nodes) {
+    const nextPath = [...path, node];
+    if (node.id === folderId) return nextPath;
+    const childPath = findFolderPath(node.children ?? [], folderId, nextPath);
+    if (childPath.length) return childPath;
+  }
+  return [];
+}
+
+function scholarshipAmount(specialty: string | null | undefined, performance: string | null | undefined) {
+  let amount = 41_800;
+  if (performance === "excellent") amount += 5_000;
+  if (specialty?.trim().toUpperCase().startsWith("3W")) amount += 3_000;
+  return amount;
 }
 
 export function LoginPage() {
@@ -124,10 +147,14 @@ export function DashboardPage() {
 }
 
 export function ApplicationsPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [apps, setApps] = useState<Application[]>([]);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
+  const [dateMode, setDateMode] = useState<"exact" | "range">("exact");
+  const [exactDate, setExactDate] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
   const [selected, setSelected] = useState<number[]>([]);
   const [error, setError] = useState("");
 
@@ -136,6 +163,14 @@ export function ApplicationsPage() {
     const params = new URLSearchParams();
     if (search) params.set("search", search);
     if (status) params.set("status", status);
+    if (dateMode === "exact" && exactDate) {
+      params.set("created_from", exactDate);
+      params.set("created_to", exactDate);
+    }
+    if (dateMode === "range") {
+      if (dateFrom) params.set("created_from", dateFrom);
+      if (dateTo) params.set("created_to", dateTo);
+    }
     const items = await apiFetch<Application[]>(`/admin/applications?${params.toString()}`, { token });
     setApps(items);
     setSelected([]);
@@ -148,6 +183,14 @@ export function ApplicationsPage() {
   const toggle = (id: number) => {
     setSelected((current) => (current.includes(id) ? current.filter((item) => item !== id) : [...current, id]));
   };
+
+  const selectedApps = apps.filter((app) => selected.includes(app.id));
+  const canUseAdmissionsActions = user?.role === "admissions_admin" || user?.role === "tech_admin";
+  const canProcessSelection = Boolean(
+    selectedApps.length
+    && selectedApps.length === selected.length
+    && selectedApps.every((app) => admissionsActionableStatuses.has(app.status))
+  );
 
   const bulk = async (action: "archive" | "accept" | "reject") => {
     if (!token || !selected.length) return;
@@ -184,12 +227,32 @@ export function ApplicationsPage() {
           <option value="">Все статусы</option>
           {statusOptions.map((item) => <option key={item} value={item}>{statusLabels[item]}</option>)}
         </select>
+        <div className="date-filter">
+          <select value={dateMode} onChange={(event) => setDateMode(event.target.value as "exact" | "range")}>
+            <option value="exact">Определенная дата</option>
+            <option value="range">Период</option>
+          </select>
+          {dateMode === "exact" ? (
+            <input type="date" value={exactDate} onChange={(event) => setExactDate(event.target.value)} aria-label="Дата заявки" />
+          ) : (
+            <>
+              <input type="date" value={dateFrom} onChange={(event) => setDateFrom(event.target.value)} aria-label="Дата от" />
+              <span>по</span>
+              <input type="date" value={dateTo} onChange={(event) => setDateTo(event.target.value)} aria-label="Дата до" />
+            </>
+          )}
+          <button type="button" onClick={load}>Применить</button>
+        </div>
       </div>
       <div className="bulk-panel">
         <span>Выбрано: {selected.length}</span>
-        <button onClick={() => bulk("archive")}><Archive size={16} /> Архивировать</button>
-        <button onClick={() => bulk("accept")}><Check size={16} /> Принять</button>
-        <button onClick={() => bulk("reject")}><X size={16} /> Отклонить</button>
+        {canUseAdmissionsActions && canProcessSelection && (
+          <>
+            <button onClick={() => bulk("archive")}><Archive size={16} /> Архивировать</button>
+            <button onClick={() => bulk("accept")}><Check size={16} /> Принять</button>
+            <button onClick={() => bulk("reject")}><X size={16} /> Отклонить</button>
+          </>
+        )}
       </div>
       {error && <div className="form-error">{error}</div>}
       <div className="data-table">
@@ -243,11 +306,15 @@ export function FileManagerPage() {
     if (!token) return;
     const nodes = await apiFetch<FolderNode[]>("/folders/tree", { token });
     setTree(nodes);
-    if (!folderId && nodes[0]) setFolderId(nodes[0].id);
   };
 
   const loadApps = async () => {
-    if (!token || !folderId) return;
+    if (!token) return;
+    if (!folderId) {
+      setApps([]);
+      setSelected([]);
+      return;
+    }
     const items = await apiFetch<Application[]>(`/admin/applications?folder_id=${folderId}&limit=500`, { token });
     setApps(items);
     setSelected([]);
@@ -371,6 +438,17 @@ export function FileManagerPage() {
         height: Math.abs(selectionBox.y - selectionBox.startY),
       }
     : undefined;
+  const currentFolder = folders.find((item) => item.id === folderId) ?? null;
+  const childFolders = folderId === null ? tree : currentFolder?.children ?? [];
+  const folderPath = folderId === null ? [] : findFolderPath(tree, folderId);
+
+  const dropApplicationsOnFolder = (event: ReactDragEvent<HTMLElement>, targetFolderId: number) => {
+    event.preventDefault();
+    const payload = event.dataTransfer.getData("application/json");
+    const ids = payload ? JSON.parse(payload) as number[] : draggingIds;
+    void moveApplications(ids, targetFolderId);
+    endDrag();
+  };
 
   const renderNode = (node: FolderNode, depth = 0) => (
     <div key={node.id}>
@@ -389,11 +467,7 @@ export function FileManagerPage() {
         }}
         onDragLeave={() => setDropTargetId((current) => current === node.id ? null : current)}
         onDrop={(event) => {
-          event.preventDefault();
-          const payload = event.dataTransfer.getData("application/json");
-          const ids = payload ? JSON.parse(payload) as number[] : draggingIds;
-          void moveApplications(ids, node.id);
-          endDrag();
+          dropApplicationsOnFolder(event, node.id);
         }}
       >
         <ChevronRight size={14} />
@@ -411,17 +485,32 @@ export function FileManagerPage() {
           <h2>Папки</h2>
           <button className="icon-button" onClick={createFolder} title="Создать папку"><FolderPlus size={18} /></button>
         </div>
-        <div className="folder-tree">{tree.map((node) => renderNode(node))}</div>
+        <div className="folder-tree">
+          <button className={folderId === null ? "folder-node active" : "folder-node"} onClick={() => setFolderId(null)}>
+            <FolderIcon size={15} />
+            <span>Корень</span>
+          </button>
+          {tree.map((node) => renderNode(node))}
+        </div>
       </aside>
       <main className="file-pane">
         <div className="pane-header">
           <div>
             <p className="eyebrow">Файловый менеджер</p>
-            <h2>{folders.find((item) => item.id === folderId)?.name ?? "Папка"}</h2>
+            <h2>{currentFolder?.name ?? "Корень"}</h2>
+            <div className="breadcrumb-row">
+              <button type="button" onClick={() => setFolderId(null)}>Корень</button>
+              {folderPath.map((folder) => (
+                <span key={folder.id}>
+                  <span>/</span>
+                  <button type="button" onClick={() => setFolderId(folder.id)}>{folder.name}</button>
+                </span>
+              ))}
+            </div>
           </div>
           <div className="toolbar compact">
-            <button onClick={renameFolder}><Pencil size={16} /> Переименовать</button>
-            <button onClick={deleteFolder}><Trash2 size={16} /> Удалить</button>
+            {folderId !== null && <button onClick={renameFolder}><Pencil size={16} /> Переименовать</button>}
+            {folderId !== null && <button onClick={deleteFolder}><Trash2 size={16} /> Удалить</button>}
           </div>
         </div>
         <div className="bulk-panel">
@@ -431,6 +520,25 @@ export function FileManagerPage() {
         <div className="file-grid-shell" ref={gridRef} onMouseDown={startSelection}>
           {selectionBox && <div className="selection-box" style={selectionStyle} />}
           <div className="file-grid">
+            {childFolders.map((folder) => (
+              <article
+                key={`folder-${folder.id}`}
+                className={folder.id === dropTargetId ? "file-card folder-card drop-target" : "file-card folder-card"}
+                onClick={() => setSelected([])}
+                onDoubleClick={() => setFolderId(folder.id)}
+                onDragOver={(event) => {
+                  if (!draggingIds.length) return;
+                  event.preventDefault();
+                  setDropTargetId(folder.id);
+                }}
+                onDragLeave={() => setDropTargetId((current) => current === folder.id ? null : current)}
+                onDrop={(event) => dropApplicationsOnFolder(event, folder.id)}
+              >
+                <FolderIcon size={32} />
+                <h3>{folder.name}</h3>
+                <small>{folder.item_count} анкет</small>
+              </article>
+            ))}
             {apps.map((app) => (
               <article
                 key={app.id}
@@ -448,6 +556,9 @@ export function FileManagerPage() {
               </article>
             ))}
           </div>
+          {!childFolders.length && !apps.length && (
+            <EmptyState title="Папка пуста" text="Создайте подпапку или переместите сюда анкеты." />
+          )}
         </div>
       </main>
     </section>
@@ -456,8 +567,27 @@ export function FileManagerPage() {
 
 type DetailsTab = "main" | "admissions" | "education" | "student";
 type RootEditableField = "iin" | "birth_date" | "full_name" | "email" | "phone";
-type AdmissionEditableField = "benefit_group" | "residence_address" | "base_class" | "qualification" | "specialty";
-type EducationEditableField = "curator_id" | "group_number" | "course" | "payment_type" | "is_state_grant";
+type AdmissionEditableField =
+  | "benefit_group"
+  | "residence_address"
+  | "base_class"
+  | "qualification"
+  | "specialty"
+  | "enrollment_type"
+  | "locality_type"
+  | "instruction_language"
+  | "study_form"
+  | "needs_dormitory";
+type EducationEditableField =
+  | "curator_id"
+  | "group_number"
+  | "course"
+  | "payment_type"
+  | "is_state_grant"
+  | "has_scholarship"
+  | "scholarship_amount"
+  | "academic_leave"
+  | "academic_performance";
 
 export function ApplicationDetailsPage() {
   const { token, user } = useAuth();
@@ -472,6 +602,12 @@ export function ApplicationDetailsPage() {
   const [dirtyRootFields, setDirtyRootFields] = useState<RootEditableField[]>([]);
   const [dirtyAdmissionFields, setDirtyAdmissionFields] = useState<AdmissionEditableField[]>([]);
   const [dirtyEducationFields, setDirtyEducationFields] = useState<EducationEditableField[]>([]);
+  const [showExpulsion, setShowExpulsion] = useState(false);
+  const [expulsion, setExpulsion] = useState({
+    order_number: "",
+    order_date: new Date().toISOString().slice(0, 10),
+    reason: "",
+  });
 
   const bulkApplicationIds = useMemo(() => {
     const raw = new URLSearchParams(location.search).get("bulk");
@@ -504,13 +640,42 @@ export function ApplicationDetailsPage() {
     setDirtyRootFields((current) => current.includes(field) ? current : [...current, field]);
   };
 
-  const updateAdmission = (field: AdmissionEditableField, value: string) => {
-    setApp((current) => current ? { ...current, admission_details: { id: current.admission_details?.id ?? 0, ...current.admission_details, [field]: value } } : current);
+  const updateAdmission = (field: AdmissionEditableField, value: string | boolean | null) => {
+    setApp((current) => current ? {
+      ...current,
+      admission_details: {
+        id: current.admission_details?.id ?? 0,
+        enrollment_type: "general",
+        locality_type: "urban",
+        study_form: "full_time",
+        needs_dormitory: false,
+        ...current.admission_details,
+        [field]: value,
+      }
+    } : current);
     setDirtyAdmissionFields((current) => current.includes(field) ? current : [...current, field]);
   };
 
   const updateEducation = (field: EducationEditableField, value: string | boolean | number | null) => {
-    setApp((current) => current ? { ...current, education_details: { id: current.education_details?.id ?? 0, is_state_grant: false, ...current.education_details, [field]: value } } : current);
+    setApp((current) => {
+      if (!current) return current;
+      const details = {
+        id: current.education_details?.id ?? 0,
+        is_state_grant: false,
+        has_scholarship: false,
+        academic_leave: false,
+        ...current.education_details,
+        [field]: value,
+      };
+      if (field === "has_scholarship") {
+        details.scholarship_amount = value
+          ? scholarshipAmount(current.admission_details?.specialty, details.academic_performance)
+          : null;
+      } else if (field === "academic_performance" && details.has_scholarship) {
+        details.scholarship_amount = scholarshipAmount(current.admission_details?.specialty, String(value || ""));
+      }
+      return { ...current, education_details: details };
+    });
     setDirtyEducationFields((current) => current.includes(field) ? current : [...current, field]);
   };
 
@@ -589,7 +754,11 @@ export function ApplicationDetailsPage() {
         group_number: details.group_number,
         course: details.course,
         payment_type: details.payment_type,
-        is_state_grant: details.is_state_grant
+        is_state_grant: details.is_state_grant,
+        has_scholarship: details.has_scholarship,
+        scholarship_amount: details.scholarship_amount,
+        academic_leave: details.academic_leave,
+        academic_performance: details.academic_performance,
       };
       if (isBulkMode) {
         const bulkUpdate = buildBulkEducationUpdate();
@@ -652,10 +821,56 @@ export function ApplicationDetailsPage() {
     }
   };
 
+  const submitExpulsion = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!token || !app) return;
+    setError("");
+    try {
+      const updated = await apiFetch<Application>(`/education/applications/${app.id}/expel`, {
+        method: "POST",
+        token,
+        body: JSON.stringify(expulsion),
+      });
+      setApp(updated);
+      setShowExpulsion(false);
+      setSaved("Студент отчислен");
+    } catch (err) {
+      setError(apiMessage(err));
+    }
+  };
+
+  const downloadPdf = async () => {
+    if (!token || !app) return;
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/admin/applications/${app.id}/pdf`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => ({ detail: "Не удалось сформировать PDF" }));
+        throw new Error(typeof payload.detail === "string" ? payload.detail : "Не удалось сформировать PDF");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `Анкета_${app.id}.pdf`;
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      setError(apiMessage(err));
+    }
+  };
+
   if (!app) return <div className="admin-page"><EmptyState title="Загрузка" text="Открываем анкету." /></div>;
   const isTeacher = user?.role === "teacher";
+  const canAdmissions = user?.role === "admissions_admin" || user?.role === "tech_admin";
   const canEducation = user?.role === "education_admin" || user?.role === "tech_admin";
-  const hasStudentSheet = ["completed", "enrolled"].includes(app.status);
+  const canEditRoot = canAdmissions || isTeacher;
+  const canUseAdmissionsActions = canAdmissions && admissionsActionableStatuses.has(app.status);
+  const canCompleteEducation = canEducation && educationCompletableStatuses.has(app.status);
+  const canExpel = canEducation && ["completed", "enrolled"].includes(app.status);
+  const hasStudentSheet = ["completed", "enrolled", "expelled"].includes(app.status);
   const groupedSpecialties = Object.entries(
     specialties.reduce<Record<string, Specialty[]>>((groups, specialty) => {
       const qualification = specialty.qualification;
@@ -674,6 +889,17 @@ export function ApplicationDetailsPage() {
     : app.education_details?.payment_type === "paid"
       ? "Платно"
       : "Не указано";
+  const enrollmentLabel = {
+    general: "На общих основаниях",
+    reinstated: "Как восстановившийся",
+    transfer: "По переводу",
+  }[app.admission_details?.enrollment_type ?? "general"];
+  const performanceLabels: Record<string, string> = {
+    excellent: "Отлично",
+    good: "Хорошо",
+    satisfactory: "Удовлетворительно",
+  };
+  const performanceLabel = performanceLabels[app.education_details?.academic_performance ?? ""] ?? "Нет данных";
   const tabs: { id: DetailsTab; label: string }[] = [
     { id: "main", label: "Основные данные" },
     ...(!isTeacher ? [{ id: "admissions" as DetailsTab, label: "Приемная комиссия" }] : []),
@@ -717,25 +943,62 @@ export function ApplicationDetailsPage() {
           <form className="panel-form tab-panel">
             {!isTeacher && (
               <>
-                <label><span>ИИН</span><input value={app.iin} onChange={(e) => updateRoot("iin", e.target.value.replace(/\D/g, "").slice(0, 12))} /></label>
-                <label><span>Дата рождения</span><input type="date" value={app.birth_date} onChange={(e) => updateRoot("birth_date", e.target.value)} /></label>
-                <label><span>ФИО</span><input value={app.full_name} onChange={(e) => updateRoot("full_name", e.target.value)} /></label>
+                <label><span>ИИН</span><input disabled={!canAdmissions} value={app.iin} onChange={(e) => updateRoot("iin", e.target.value.replace(/\D/g, "").slice(0, 12))} /></label>
+                <label><span>Дата рождения</span><input disabled={!canAdmissions} type="date" value={app.birth_date} onChange={(e) => updateRoot("birth_date", e.target.value)} /></label>
+                <label><span>ФИО</span><input disabled={!canAdmissions} value={app.full_name} onChange={(e) => updateRoot("full_name", e.target.value)} /></label>
               </>
             )}
-            <label><span>Email</span><input value={app.email} onChange={(e) => updateRoot("email", e.target.value)} /></label>
-            <label><span>Телефон</span><input value={app.phone} onChange={(e) => updateRoot("phone", e.target.value)} /></label>
-            <button type="button" className="primary-button" onClick={saveApplication}><Save size={16} /> Сохранить</button>
+            <label><span>Email</span><input disabled={!canEditRoot} value={app.email} onChange={(e) => updateRoot("email", e.target.value)} /></label>
+            <label><span>Телефон</span><input disabled={!canEditRoot} value={app.phone} onChange={(e) => updateRoot("phone", e.target.value)} /></label>
+            {canEditRoot && <button type="button" className="primary-button" onClick={saveApplication}><Save size={16} /> Сохранить</button>}
           </form>
         )}
 
         {activeTab === "admissions" && !isTeacher && (
           <form className="panel-form tab-panel">
-            <label><span>Льготная группа</span><input value={app.admission_details?.benefit_group ?? ""} onChange={(e) => updateAdmission("benefit_group", e.target.value)} /></label>
-            <label><span>Место жительства</span><input value={app.admission_details?.residence_address ?? ""} onChange={(e) => updateAdmission("residence_address", e.target.value)} /></label>
-            <label><span>База поступления</span><input value={app.admission_details?.base_class ?? ""} onChange={(e) => updateAdmission("base_class", e.target.value)} placeholder="9 класс / 11 класс" /></label>
+            <label><span>Льготная группа</span><input disabled={!canAdmissions} value={app.admission_details?.benefit_group ?? ""} onChange={(e) => updateAdmission("benefit_group", e.target.value)} /></label>
+            <label><span>Место жительства</span><input disabled={!canAdmissions} value={app.admission_details?.residence_address ?? ""} onChange={(e) => updateAdmission("residence_address", e.target.value)} /></label>
+            <label><span>База поступления</span><input disabled={!canAdmissions} value={app.admission_details?.base_class ?? ""} onChange={(e) => updateAdmission("base_class", e.target.value)} placeholder="9 класс / 11 класс" /></label>
+            <label>
+              <span>Вид зачисления</span>
+              <select disabled={!canAdmissions} value={app.admission_details?.enrollment_type ?? "general"} onChange={(e) => updateAdmission("enrollment_type", e.target.value)}>
+                <option value="general">На общих основаниях</option>
+                <option value="reinstated">Как восстановившийся</option>
+                <option value="transfer">По переводу</option>
+              </select>
+            </label>
+            <label>
+              <span>Тип местности проживания</span>
+              <select disabled={!canAdmissions} value={app.admission_details?.locality_type ?? "urban"} onChange={(e) => updateAdmission("locality_type", e.target.value)}>
+                <option value="urban">Городская местность</option>
+                <option value="rural">Сельская местность</option>
+              </select>
+            </label>
+            <label>
+              <span>Язык обучения</span>
+              <select disabled={!canAdmissions} value={app.admission_details?.instruction_language ?? ""} onChange={(e) => updateAdmission("instruction_language", e.target.value || null)}>
+                <option value="">Не выбран</option>
+                <option value="russian">Русский</option>
+                <option value="kazakh">Казахский</option>
+              </select>
+            </label>
+            <label>
+              <span>Форма обучения</span>
+              <select disabled={!canAdmissions} value={app.admission_details?.study_form ?? "full_time"} onChange={(e) => updateAdmission("study_form", e.target.value)}>
+                <option value="full_time">Очная</option>
+                <option value="part_time">Заочная</option>
+              </select>
+            </label>
+            <label>
+              <span>Общежитие</span>
+              <select disabled={!canAdmissions} value={app.admission_details?.needs_dormitory ? "yes" : "no"} onChange={(e) => updateAdmission("needs_dormitory", e.target.value === "yes")}>
+                <option value="no">Не нужно</option>
+                <option value="yes">Нужно</option>
+              </select>
+            </label>
             <label>
               <span>Специальность</span>
-              <select value={app.admission_details?.specialty ?? ""} onChange={(e) => {
+              <select disabled={!canAdmissions} value={app.admission_details?.specialty ?? ""} onChange={(e) => {
                 const specialty = specialties.find((item) => item.name === e.target.value);
                 updateAdmission("specialty", e.target.value);
                 updateAdmission("qualification", specialty?.qualification ?? "");
@@ -748,13 +1011,15 @@ export function ApplicationDetailsPage() {
                 ))}
               </select>
             </label>
-            <label><span>Квалификация</span><input value={app.admission_details?.qualification ?? ""} onChange={(e) => updateAdmission("qualification", e.target.value)} /></label>
-            <div className="action-row">
-              <button type="button" onClick={() => saveApplication()}><Save size={16} /> Сохранить</button>
-              <button type="button" onClick={() => action("archive")}><Archive size={16} /> Архивировать</button>
-              <button type="button" onClick={() => action("reject")}><X size={16} /> Отклонить</button>
-              <button type="button" onClick={() => action("accept")}><Check size={16} /> Принять</button>
-            </div>
+            <label><span>Квалификация</span><input disabled={!canAdmissions} value={app.admission_details?.qualification ?? ""} onChange={(e) => updateAdmission("qualification", e.target.value)} /></label>
+            {canAdmissions && (
+              <div className="action-row">
+                <button type="button" onClick={() => saveApplication()}><Save size={16} /> Сохранить</button>
+                {canUseAdmissionsActions && <button type="button" onClick={() => action("archive")}><Archive size={16} /> Архивировать</button>}
+                {canUseAdmissionsActions && <button type="button" onClick={() => action("reject")}><X size={16} /> Отклонить</button>}
+                {canUseAdmissionsActions && <button type="button" onClick={() => action("accept")}><Check size={16} /> Принять</button>}
+              </div>
+            )}
           </form>
         )}
 
@@ -768,43 +1033,97 @@ export function ApplicationDetailsPage() {
               </select>
             </label>
             <label><span>Номер группы</span><input value={app.education_details?.group_number ?? ""} onChange={(e) => updateEducation("group_number", e.target.value)} placeholder="ИС-1-24" /></label>
-            <label><span>Курс</span><input type="number" min={1} max={4} value={app.education_details?.course ?? ""} onChange={(e) => updateEducation("course", Number(e.target.value))} /></label>
+            <label><span>Курс</span><input type="number" min={1} max={4} value={app.education_details?.course ?? ""} onChange={(e) => updateEducation("course", e.target.value ? Number(e.target.value) : null)} /></label>
             <label>
               <span>Оплата</span>
-              <select value={app.education_details?.payment_type ?? ""} onChange={(e) => updateEducation("payment_type", e.target.value)}>
+              <select value={app.education_details?.payment_type ?? ""} onChange={(e) => updateEducation("payment_type", e.target.value || null)}>
                 <option value="">Выберите</option>
                 <option value="free">Бесплатно</option>
                 <option value="paid">Платно</option>
               </select>
             </label>
             <label className="checkbox-line"><input type="checkbox" checked={Boolean(app.education_details?.is_state_grant)} onChange={(e) => updateEducation("is_state_grant", e.target.checked)} /> Госзаказ</label>
+            <label>
+              <span>Успеваемость</span>
+              <select value={app.education_details?.academic_performance ?? ""} onChange={(e) => updateEducation("academic_performance", e.target.value || null)}>
+                <option value="">Нет данных</option>
+                <option value="excellent">Отлично</option>
+                <option value="good">Хорошо</option>
+                <option value="satisfactory">Удовлетворительно</option>
+              </select>
+            </label>
+            <label className="checkbox-line"><input type="checkbox" checked={Boolean(app.education_details?.has_scholarship)} onChange={(e) => updateEducation("has_scholarship", e.target.checked)} /> Получает стипендию</label>
+            <label>
+              <span>Размер стипендии</span>
+              <input
+                type="number"
+                min={0}
+                disabled={!app.education_details?.has_scholarship}
+                value={app.education_details?.scholarship_amount ?? ""}
+                onChange={(e) => updateEducation("scholarship_amount", e.target.value ? Number(e.target.value) : null)}
+              />
+            </label>
+            <label className="checkbox-line"><input type="checkbox" checked={Boolean(app.education_details?.academic_leave)} onChange={(e) => updateEducation("academic_leave", e.target.checked)} /> Академический отпуск</label>
             <div className="action-row">
               <button type="button" onClick={() => saveEducation(false)}><Save size={16} /> Сохранить</button>
-              <button type="button" className="primary-button" onClick={() => saveEducation(true)}><Check size={16} /> Оформить</button>
+              {canCompleteEducation && <button type="button" className="primary-button" onClick={() => saveEducation(true)}><Check size={16} /> Оформить</button>}
+              {canExpel && <button type="button" onClick={() => setShowExpulsion(true)}><UserMinus size={16} /> Отчислить</button>}
             </div>
           </form>
         )}
 
         {activeTab === "student" && hasStudentSheet && (
           <div className="student-sheet">
+            <div className="action-row">
+              <button type="button" className="primary-button" onClick={downloadPdf}><Download size={16} /> Выгрузить анкету в PDF</button>
+            </div>
             <dl>
               <div><dt>ИИН</dt><dd>{app.iin}</dd></div>
               <div><dt>ФИО</dt><dd>{app.full_name}</dd></div>
               <div><dt>Дата рождения</dt><dd>{formatDate(app.birth_date)}</dd></div>
               <div><dt>Место жительства</dt><dd>{app.admission_details?.residence_address ?? "Не указано"}</dd></div>
+              <div><dt>Тип местности</dt><dd>{app.admission_details?.locality_type === "rural" ? "Сельская местность" : "Городская местность"}</dd></div>
               <div><dt>Email</dt><dd>{app.email}</dd></div>
               <div><dt>Телефон</dt><dd>{app.phone}</dd></div>
               <div><dt>База поступления</dt><dd>{app.admission_details?.base_class ?? "Не указано"}</dd></div>
+              <div><dt>Вид зачисления</dt><dd>{enrollmentLabel}</dd></div>
+              <div><dt>Язык обучения</dt><dd>{app.admission_details?.instruction_language === "russian" ? "Русский" : app.admission_details?.instruction_language === "kazakh" ? "Казахский" : "Не указан"}</dd></div>
+              <div><dt>Форма обучения</dt><dd>{app.admission_details?.study_form === "part_time" ? "Заочная" : "Очная"}</dd></div>
+              <div><dt>Общежитие</dt><dd>{app.admission_details?.needs_dormitory ? "Нужно" : "Не нужно"}</dd></div>
               <div><dt>Курс</dt><dd>{app.education_details?.course ?? "Не указано"}</dd></div>
               <div><dt>Группа</dt><dd>{app.education_details?.group_number ?? "Не указана"}</dd></div>
               <div><dt>Куратор</dt><dd>{curatorName}</dd></div>
               <div><dt>Квалификация</dt><dd>{app.admission_details?.qualification ?? "Не указана"}</dd></div>
               <div><dt>Специальность</dt><dd>{app.admission_details?.specialty ?? "Не указана"}</dd></div>
               <div><dt>Оплата</dt><dd>{paymentLabel}</dd></div>
+              <div><dt>Успеваемость</dt><dd>{performanceLabel}</dd></div>
+              <div><dt>Стипендия</dt><dd>{app.education_details?.has_scholarship ? `${app.education_details.scholarship_amount ?? 0} ₸` : "Нет"}</dd></div>
+              <div><dt>Академический отпуск</dt><dd>{app.education_details?.academic_leave ? "Да" : "Нет"}</dd></div>
             </dl>
+            {app.status === "expelled" && (
+              <div className="expulsion-summary">
+                <h3>Отчисление</h3>
+                <p>Приказ № {app.education_details?.expulsion_order_number ?? "не указан"} от {app.education_details?.expulsion_order_date ? formatDate(app.education_details.expulsion_order_date) : "дата не указана"}</p>
+                <p>{app.education_details?.expulsion_reason ?? "Причина не указана"}</p>
+              </div>
+            )}
           </div>
         )}
       </section>
+      {showExpulsion && (
+        <div className="modal-backdrop" onMouseDown={() => setShowExpulsion(false)}>
+          <form className="success-modal panel-form" onSubmit={submitExpulsion} onMouseDown={(event) => event.stopPropagation()}>
+            <h3>Отчисление студента</h3>
+            <label><span>Номер приказа</span><input required value={expulsion.order_number} onChange={(event) => setExpulsion((current) => ({ ...current, order_number: event.target.value }))} /></label>
+            <label><span>Дата приказа</span><input required type="date" value={expulsion.order_date} onChange={(event) => setExpulsion((current) => ({ ...current, order_date: event.target.value }))} /></label>
+            <label><span>Причина</span><textarea required rows={4} value={expulsion.reason} onChange={(event) => setExpulsion((current) => ({ ...current, reason: event.target.value }))} /></label>
+            <div className="action-row">
+              <button type="button" onClick={() => setShowExpulsion(false)}>Отмена</button>
+              <button type="submit" className="primary-button"><UserMinus size={16} /> Отчислить</button>
+            </div>
+          </form>
+        </div>
+      )}
     </section>
   );
 }

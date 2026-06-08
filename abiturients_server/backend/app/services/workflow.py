@@ -1,13 +1,14 @@
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 
 from fastapi import HTTPException, status
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.models import (
     AdmissionDetails,
     Application,
     ApplicationStatus,
+    AcademicPerformance,
     Chat,
     ChatMessage,
     EducationDetails,
@@ -31,6 +32,15 @@ EDUCATION_STATUSES = {
     ApplicationStatus.education_review.value,
     ApplicationStatus.enrolled.value,
     ApplicationStatus.completed.value,
+    ApplicationStatus.expelled.value,
+}
+ADMISSIONS_ACTIONABLE_STATUSES = {
+    ApplicationStatus.new.value,
+    ApplicationStatus.in_admissions_review.value,
+}
+EDUCATION_COMPLETABLE_STATUSES = {
+    ApplicationStatus.accepted_by_admissions.value,
+    ApplicationStatus.education_review.value,
 }
 
 
@@ -102,6 +112,21 @@ def get_or_create_education_details(db: Session, app: Application) -> EducationD
     db.add(details)
     db.flush()
     return details
+
+
+def calculate_scholarship_amount(app: Application, academic_performance: str | None) -> int:
+    amount = 41_800
+    if academic_performance == AcademicPerformance.excellent.value:
+        amount += 5_000
+    specialty = app.admission_details.specialty if app.admission_details else None
+    if specialty and specialty.strip().upper().startswith("3W"):
+        amount += 3_000
+    return amount
+
+
+def ensure_status_allowed(app: Application, allowed_statuses: set[str], message: str) -> None:
+    if app.status not in allowed_statuses:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=message)
 
 
 def get_or_create_chat(db: Session, app: Application) -> Chat:
@@ -212,7 +237,17 @@ def reject_application(db: Session, app: Application, reason: str, rejected_by: 
     move_application_to_folder(db, app.id, rejected_folder)
 
 
-def apply_application_filters(query, search: str | None, status_value: str | None, specialty: str | None, group: str | None, curator_id: int | None, folder_id: int | None):
+def apply_application_filters(
+    query,
+    search: str | None,
+    status_value: str | None,
+    specialty: str | None,
+    group: str | None,
+    curator_id: int | None,
+    folder_id: int | None,
+    created_from: date | None = None,
+    created_to: date | None = None,
+):
     if search:
         like = f"%{search.strip()}%"
         query = query.filter(
@@ -233,6 +268,10 @@ def apply_application_filters(query, search: str | None, status_value: str | Non
         query = query.join(EducationDetails, isouter=True).filter(EducationDetails.curator_id == curator_id)
     if folder_id:
         query = query.join(FolderItem).filter(FolderItem.folder_id == folder_id)
+    if created_from:
+        query = query.filter(func.date(Application.created_at) >= created_from)
+    if created_to:
+        query = query.filter(func.date(Application.created_at) <= created_to)
     return query
 
 

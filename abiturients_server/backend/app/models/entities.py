@@ -38,11 +38,39 @@ class ApplicationStatus(str, enum.Enum):
     education_review = "education_review"
     enrolled = "enrolled"
     completed = "completed"
+    expelled = "expelled"
 
 
 class PaymentType(str, enum.Enum):
     free = "free"
     paid = "paid"
+
+
+class EnrollmentType(str, enum.Enum):
+    general = "general"
+    reinstated = "reinstated"
+    transfer = "transfer"
+
+
+class LocalityType(str, enum.Enum):
+    urban = "urban"
+    rural = "rural"
+
+
+class InstructionLanguage(str, enum.Enum):
+    russian = "russian"
+    kazakh = "kazakh"
+
+
+class StudyForm(str, enum.Enum):
+    full_time = "full_time"
+    part_time = "part_time"
+
+
+class AcademicPerformance(str, enum.Enum):
+    excellent = "excellent"
+    good = "good"
+    satisfactory = "satisfactory"
 
 
 class User(Base):
@@ -97,6 +125,11 @@ class AdmissionDetails(Base):
     base_class: Mapped[str | None] = mapped_column(String(64))
     qualification: Mapped[str | None] = mapped_column(String(255))
     specialty: Mapped[str | None] = mapped_column(String(255), index=True)
+    enrollment_type: Mapped[str] = mapped_column(String(32), nullable=False, default=EnrollmentType.general.value)
+    locality_type: Mapped[str] = mapped_column(String(32), nullable=False, default=LocalityType.urban.value)
+    instruction_language: Mapped[str | None] = mapped_column(String(32))
+    study_form: Mapped[str] = mapped_column(String(32), nullable=False, default=StudyForm.full_time.value)
+    needs_dormitory: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
 
     application: Mapped[Application] = relationship(back_populates="admission_details")
 
@@ -111,7 +144,15 @@ class EducationDetails(Base):
     course: Mapped[int | None] = mapped_column(Integer)
     payment_type: Mapped[str | None] = mapped_column(String(32))
     is_state_grant: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    has_scholarship: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    scholarship_amount: Mapped[int | None] = mapped_column(Integer)
+    academic_leave: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    academic_performance: Mapped[str | None] = mapped_column(String(32))
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    expulsion_order_number: Mapped[str | None] = mapped_column(String(100))
+    expulsion_order_date: Mapped[date | None] = mapped_column(Date)
+    expulsion_reason: Mapped[str | None] = mapped_column(Text)
+    expelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     application: Mapped[Application] = relationship(back_populates="education_details")
     curator: Mapped[User | None] = relationship(back_populates="curated_students")

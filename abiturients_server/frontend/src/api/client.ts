@@ -18,6 +18,11 @@ export type AdmissionDetails = {
   base_class?: string | null;
   qualification?: string | null;
   specialty?: string | null;
+  enrollment_type: "general" | "reinstated" | "transfer";
+  locality_type: "urban" | "rural";
+  instruction_language?: "russian" | "kazakh" | null;
+  study_form: "full_time" | "part_time";
+  needs_dormitory: boolean;
 };
 
 export type EducationDetails = {
@@ -27,7 +32,15 @@ export type EducationDetails = {
   course?: number | null;
   payment_type?: "free" | "paid" | null;
   is_state_grant: boolean;
+  has_scholarship: boolean;
+  scholarship_amount?: number | null;
+  academic_leave: boolean;
+  academic_performance?: "excellent" | "good" | "satisfactory" | null;
   completed_at?: string | null;
+  expulsion_order_number?: string | null;
+  expulsion_order_date?: string | null;
+  expulsion_reason?: string | null;
+  expelled_at?: string | null;
 };
 
 export type Application = {
@@ -172,7 +185,8 @@ export const statusLabels: Record<string, string> = {
   accepted_by_admissions: "Поступившие",
   education_review: "Учебная часть",
   enrolled: "Зачислен",
-  completed: "Оформлен"
+  completed: "Оформлен",
+  expelled: "Отчислен"
 };
 
 export const roleLabels: Record<Role, string> = {

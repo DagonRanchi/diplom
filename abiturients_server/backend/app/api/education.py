@@ -5,16 +5,20 @@ from sqlalchemy.orm import Session
 
 from app.core.rbac import get_current_user
 from app.db.session import get_db
-from app.models import Application, ApplicationStatus, PaymentType, Role, User
+from app.models import Application, ApplicationStatus, Role, User
 from app.schemas.dto import (
     ApplicationRead,
     BulkEducationDetailsUpdateRequest,
     BulkIdsRequest,
     EducationDetailsRead,
     EducationDetailsUpdate,
+    ExpelRequest,
 )
 from app.services.serializers import serialize_application
 from app.services.workflow import (
+    calculate_scholarship_amount,
+    EDUCATION_COMPLETABLE_STATUSES,
+    ensure_status_allowed,
     ensure_folder_path,
     get_or_create_education_details,
     get_visible_application_or_404,
@@ -44,8 +48,15 @@ def apply_education_details_update(
         curator = db.get(User, data["curator_id"])
         if not curator or curator.role != Role.teacher.value or not curator.is_active:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Curator must be an active teacher")
+    had_scholarship = details.has_scholarship
     for field, value in data.items():
-        setattr(details, field, value.value if isinstance(value, PaymentType) else value)
+        setattr(details, field, value.value if hasattr(value, "value") else value)
+    if not details.has_scholarship:
+        details.scholarship_amount = None
+    elif "scholarship_amount" not in data and (
+        not had_scholarship or "academic_performance" in data
+    ):
+        details.scholarship_amount = calculate_scholarship_amount(app, details.academic_performance)
     if app.status == ApplicationStatus.accepted_by_admissions.value:
         app.status = ApplicationStatus.education_review.value
     return details
@@ -53,6 +64,11 @@ def apply_education_details_update(
 
 def complete_education_application(app: Application, user: User, db: Session) -> Application:
     ensure_education_operator(user)
+    ensure_status_allowed(
+        app,
+        EDUCATION_COMPLETABLE_STATUSES,
+        "Студент уже оформлен или заявка недоступна для оформления",
+    )
     details = get_or_create_education_details(db, app)
     missing = []
     if not details.curator_id:
@@ -79,6 +95,24 @@ def complete_education_application(app: Application, user: User, db: Session) ->
             "student_assigned",
             app.id,
         )
+    return app
+
+
+def expel_education_application(app: Application, payload: ExpelRequest, user: User, db: Session) -> Application:
+    ensure_education_operator(user)
+    ensure_status_allowed(
+        app,
+        {ApplicationStatus.completed.value, ApplicationStatus.enrolled.value},
+        "Отчислить можно только оформленного студента",
+    )
+    details = get_or_create_education_details(db, app)
+    details.expulsion_order_number = payload.order_number.strip()
+    details.expulsion_order_date = payload.order_date
+    details.expulsion_reason = payload.reason.strip()
+    details.expelled_at = datetime.now(UTC)
+    app.status = ApplicationStatus.expelled.value
+    folder = ensure_folder_path(db, ["Учебная часть", "Отчисленные"], Role.education_admin.value, user.id)
+    move_application_to_folder(db, app.id, folder)
     return app
 
 
@@ -147,3 +181,17 @@ def bulk_save_education_applications(
     for app in result:
         db.refresh(app)
     return [serialize_application(app) for app in result]
+
+
+@router.post("/applications/{application_id}/expel", response_model=ApplicationRead)
+def expel_application(
+    application_id: int,
+    payload: ExpelRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApplicationRead:
+    app = get_visible_application_or_404(db, application_id, user)
+    expel_education_application(app, payload, user, db)
+    db.commit()
+    db.refresh(app)
+    return serialize_application(app)

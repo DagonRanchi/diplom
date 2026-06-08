@@ -30,7 +30,8 @@ a {
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
@@ -501,7 +502,8 @@ label span {
 }
 
 input,
-select {
+select,
+textarea {
   width: 100%;
   min-height: 44px;
   border-radius: 8px;
@@ -510,6 +512,12 @@ select {
   background: white;
   color: var(--ink);
   outline: none;
+}
+
+textarea {
+  padding-top: 10px;
+  padding-bottom: 10px;
+  resize: vertical;
 }
 
 input[type="checkbox"] {
@@ -521,7 +529,8 @@ input[type="checkbox"] {
 }
 
 input:focus,
-select:focus {
+select:focus,
+textarea:focus {
   border-color: var(--blue-500);
   box-shadow: 0 0 0 4px rgba(47, 157, 226, 0.12);
 }
@@ -812,6 +821,11 @@ select:focus {
   color: #166534;
 }
 
+.status-expelled {
+  background: #f4efff;
+  color: #6336a8;
+}
+
 .status-archived_by_admissions {
   background: #fff8da;
   color: #735c0f;
@@ -995,6 +1009,58 @@ td span {
 .file-card h3 {
   margin: 0;
   color: var(--blue-900);
+}
+
+.folder-card {
+  min-height: 132px;
+  background: #f7fbff;
+  border-color: #bdd7ea;
+}
+
+.folder-card svg {
+  color: var(--blue-500);
+}
+
+.folder-card.drop-target {
+  outline: 3px solid rgba(47, 157, 226, 0.28);
+  background: var(--blue-100);
+}
+
+.folder-card small {
+  color: var(--muted);
+}
+
+.breadcrumb-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.breadcrumb-row button {
+  border: 0;
+  background: transparent;
+  color: var(--blue-700);
+  padding: 2px 4px;
+}
+
+.date-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.date-filter input {
+  min-width: 150px;
+}
+
+.expulsion-summary {
+  grid-column: 1 / -1;
+  border: 1px solid #d8c8ee;
+  background: #faf7ff;
+  border-radius: 8px;
+  padding: 14px;
 }
 
 .panel-form {

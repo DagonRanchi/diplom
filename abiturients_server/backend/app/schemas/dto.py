@@ -2,7 +2,16 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from app.models import ApplicationStatus, PaymentType, Role
+from app.models import (
+    AcademicPerformance,
+    ApplicationStatus,
+    EnrollmentType,
+    InstructionLanguage,
+    LocalityType,
+    PaymentType,
+    Role,
+    StudyForm,
+)
 
 EMAIL_PATTERN = r"^[^@\s]+@[^@\s]+\.[^@\s]+$"
 
@@ -68,6 +77,11 @@ class AdmissionDetailsRead(BaseModel):
     base_class: str | None = None
     qualification: str | None = None
     specialty: str | None = None
+    enrollment_type: str
+    locality_type: str
+    instruction_language: str | None = None
+    study_form: str
+    needs_dormitory: bool
 
 
 class AdmissionDetailsUpdate(BaseModel):
@@ -76,6 +90,11 @@ class AdmissionDetailsUpdate(BaseModel):
     base_class: str | None = None
     qualification: str | None = None
     specialty: str | None = None
+    enrollment_type: EnrollmentType | None = None
+    locality_type: LocalityType | None = None
+    instruction_language: InstructionLanguage | None = None
+    study_form: StudyForm | None = None
+    needs_dormitory: bool | None = None
 
 
 class EducationDetailsRead(BaseModel):
@@ -87,7 +106,15 @@ class EducationDetailsRead(BaseModel):
     course: int | None = None
     payment_type: str | None = None
     is_state_grant: bool
+    has_scholarship: bool
+    scholarship_amount: int | None = None
+    academic_leave: bool
+    academic_performance: str | None = None
     completed_at: datetime | None = None
+    expulsion_order_number: str | None = None
+    expulsion_order_date: date | None = None
+    expulsion_reason: str | None = None
+    expelled_at: datetime | None = None
 
 
 class EducationDetailsUpdate(BaseModel):
@@ -96,6 +123,16 @@ class EducationDetailsUpdate(BaseModel):
     course: int | None = Field(default=None, ge=1, le=4)
     payment_type: PaymentType | None = None
     is_state_grant: bool | None = None
+    has_scholarship: bool | None = None
+    scholarship_amount: int | None = Field(default=None, ge=0, le=1_000_000)
+    academic_leave: bool | None = None
+    academic_performance: AcademicPerformance | None = None
+
+
+class ExpelRequest(BaseModel):
+    order_number: str = Field(min_length=1, max_length=100)
+    order_date: date
+    reason: str = Field(min_length=3, max_length=2000)
 
 
 class ApplicationCreate(BaseModel):

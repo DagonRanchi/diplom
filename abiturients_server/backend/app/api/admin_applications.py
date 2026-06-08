@@ -1,3 +1,5 @@
+from datetime import date
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
@@ -18,6 +20,9 @@ from app.schemas.dto import (
 from app.services.serializers import serialize_application
 from app.services.workflow import (
     apply_application_filters,
+    ADMISSIONS_ACTIONABLE_STATUSES,
+    calculate_scholarship_amount,
+    ensure_status_allowed,
     ensure_folder_path,
     get_or_create_admission_details,
     get_or_create_education_details,
@@ -63,7 +68,13 @@ def apply_application_update(app: Application, payload: ApplicationAdminUpdate, 
     except ValueError:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Неправильный ИИН")
 
-    for field in ("iin", "birth_date", "full_name", "email", "phone", "status"):
+    if "status" in data:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Статус заявки изменяется только через предусмотренные действия",
+        )
+
+    for field in ("iin", "birth_date", "full_name", "email", "phone"):
         if field in data and data[field] is not None:
             setattr(app, field, data[field].value if hasattr(data[field], "value") else data[field])
 
@@ -71,7 +82,12 @@ def apply_application_update(app: Application, payload: ApplicationAdminUpdate, 
         details = get_or_create_admission_details(db, app)
         details_data = payload.admission_details.model_dump(exclude_unset=True)
         for field, value in details_data.items():
-            setattr(details, field, value)
+            setattr(details, field, value.value if hasattr(value, "value") else value)
+        if "specialty" in details_data and app.education_details and app.education_details.has_scholarship:
+            app.education_details.scholarship_amount = calculate_scholarship_amount(
+                app,
+                app.education_details.academic_performance,
+            )
 
 
 @router.get("", response_model=list[ApplicationRead])
@@ -82,13 +98,27 @@ def list_applications(
     group: str | None = None,
     curator_id: int | None = None,
     folder_id: int | None = None,
+    created_from: date | None = Query(default=None),
+    created_to: date | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[ApplicationRead]:
+    if created_from and created_to and created_from > created_to:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Начальная дата позже конечной")
     query = query_applications_for_user(db, user)
-    query = apply_application_filters(query, search, status_value, specialty, group, curator_id, folder_id)
+    query = apply_application_filters(
+        query,
+        search,
+        status_value,
+        specialty,
+        group,
+        curator_id,
+        folder_id,
+        created_from,
+        created_to,
+    )
     apps = query.order_by(Application.created_at.desc()).offset(offset).limit(limit).all()
     return [serialize_application(app) for app in apps]
 
@@ -135,6 +165,7 @@ def bulk_update_applications(
 def archive_application(application_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ApplicationRead:
     ensure_admissions_operator(user)
     app = get_visible_application_or_404(db, application_id, user)
+    ensure_status_allowed(app, ADMISSIONS_ACTIONABLE_STATUSES, "Эту заявку уже нельзя архивировать")
     app.status = ApplicationStatus.archived_by_admissions.value
     folder = ensure_folder_path(db, ["Приемная комиссия", "Архив"], Role.admissions_admin.value, user.id)
     move_application_to_folder(db, app.id, folder)
@@ -152,6 +183,7 @@ def reject_single(
 ) -> ApplicationRead:
     ensure_admissions_operator(user)
     app = get_visible_application_or_404(db, application_id, user)
+    ensure_status_allowed(app, ADMISSIONS_ACTIONABLE_STATUSES, "Эту заявку уже нельзя отклонить")
     reject_application(db, app, payload.reason, user)
     db.commit()
     db.refresh(app)
@@ -162,6 +194,7 @@ def reject_single(
 def accept_application(application_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ApplicationRead:
     ensure_admissions_operator(user)
     app = get_visible_application_or_404(db, application_id, user)
+    ensure_status_allowed(app, ADMISSIONS_ACTIONABLE_STATUSES, "Эту заявку уже нельзя принять")
     app.status = ApplicationStatus.accepted_by_admissions.value
     get_or_create_education_details(db, app)
     folder = ensure_folder_path(db, ["Учебная часть", "Требуют оформления"], Role.education_admin.value, user.id)
@@ -186,6 +219,7 @@ def bulk_archive(payload: BulkIdsRequest, user: User = Depends(get_current_user)
     folder = ensure_folder_path(db, ["Приемная комиссия", "Архив"], Role.admissions_admin.value, user.id)
     for app_id in payload.application_ids:
         app = get_visible_application_or_404(db, app_id, user)
+        ensure_status_allowed(app, ADMISSIONS_ACTIONABLE_STATUSES, "Среди выбранных есть заявки, которые нельзя архивировать")
         app.status = ApplicationStatus.archived_by_admissions.value
         move_application_to_folder(db, app.id, folder)
         result.append(app)
@@ -199,6 +233,7 @@ def bulk_reject(payload: BulkRejectRequest, user: User = Depends(get_current_use
     result = []
     for app_id in payload.application_ids:
         app = get_visible_application_or_404(db, app_id, user)
+        ensure_status_allowed(app, ADMISSIONS_ACTIONABLE_STATUSES, "Среди выбранных есть заявки, которые нельзя отклонить")
         reject_application(db, app, payload.reason, user)
         result.append(app)
     db.commit()
@@ -212,6 +247,7 @@ def bulk_accept(payload: BulkIdsRequest, user: User = Depends(get_current_user),
     folder = ensure_folder_path(db, ["Учебная часть", "Требуют оформления"], Role.education_admin.value, user.id)
     for app_id in payload.application_ids:
         app = get_visible_application_or_404(db, app_id, user)
+        ensure_status_allowed(app, ADMISSIONS_ACTIONABLE_STATUSES, "Среди выбранных есть заявки, которые нельзя принять")
         app.status = ApplicationStatus.accepted_by_admissions.value
         get_or_create_education_details(db, app)
         move_application_to_folder(db, app.id, folder)
