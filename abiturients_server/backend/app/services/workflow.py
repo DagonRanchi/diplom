@@ -2,12 +2,13 @@ from datetime import UTC, date, datetime
 
 from fastapi import HTTPException, status
 from sqlalchemy import func, or_, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, aliased, joinedload, selectinload
 
 from app.models import (
     AdmissionDetails,
     Application,
     ApplicationStatus,
+    ApplicationTag,
     AcademicPerformance,
     Chat,
     ChatMessage,
@@ -59,6 +60,7 @@ def query_applications_for_user(db: Session, user: User):
             joinedload(Application.chat),
             joinedload(Application.contest_profile).joinedload(ContestProfile.accepted_specialty),
             joinedload(Application.contest_choices).joinedload(ContestChoice.specialty),
+            selectinload(Application.tags),
         )
     )
     if user.role == Role.tech_admin.value:
@@ -96,6 +98,7 @@ def get_visible_application_or_404(db: Session, app_id: int, user: User) -> Appl
             joinedload(Application.chat),
             joinedload(Application.contest_profile).joinedload(ContestProfile.accepted_specialty),
             joinedload(Application.contest_choices).joinedload(ContestChoice.specialty),
+            selectinload(Application.tags),
         )
         .filter(Application.id == app_id)
         .first()
@@ -254,17 +257,19 @@ def apply_application_filters(
     group: str | None,
     curator_id: int | None,
     folder_id: int | None,
+    folder_recursive: bool = False,
     created_from: date | None = None,
     created_to: date | None = None,
 ):
     if search:
-        like = f"%{search.strip()}%"
+        search_value = search.strip()
+        like = f"%{search_value}%"
+        tag_like = f"%{search_value.lstrip('#')}%"
         query = query.filter(
             or_(
                 Application.full_name.ilike(like),
                 Application.iin.ilike(like),
-                Application.phone.ilike(like),
-                Application.email.ilike(like),
+                Application.tags.any(ApplicationTag.name.ilike(tag_like)),
             )
         )
     if status_value:
@@ -276,7 +281,21 @@ def apply_application_filters(
     if curator_id:
         query = query.join(EducationDetails, isouter=True).filter(EducationDetails.curator_id == curator_id)
     if folder_id:
-        query = query.join(FolderItem).filter(FolderItem.folder_id == folder_id)
+        folder_ids = [folder_id]
+        if folder_recursive:
+            folder_tree = select(Folder.id).where(Folder.id == folder_id).cte(name="folder_tree", recursive=True)
+            child_folder = aliased(Folder)
+            folder_tree = folder_tree.union_all(
+                select(child_folder.id).where(child_folder.parent_id == folder_tree.c.id)
+            )
+            folder_filter = select(folder_tree.c.id)
+        else:
+            folder_filter = folder_ids
+        query = query.filter(
+            Application.id.in_(
+                select(FolderItem.application_id).where(FolderItem.folder_id.in_(folder_filter))
+            )
+        )
     if created_from:
         query = query.filter(func.date(Application.created_at) >= created_from)
     if created_to:

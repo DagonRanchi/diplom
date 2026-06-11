@@ -1,4 +1,5 @@
 from datetime import date, datetime
+import re
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -110,7 +111,7 @@ class ContestProfileRead(BaseModel):
 
 
 class ContestApplicationUpdate(BaseModel):
-    benefit_group: str | None = None
+    benefit_group: Literal["Льгот нет", "Многодетная", "Сирота", "Инвалидность"] | None = None
     residence_address: str | None = None
     base_class: Literal["9 класс", "11 класс", "ТИПО"] | None = None
     enrollment_type: EnrollmentType | None = None
@@ -163,7 +164,7 @@ class AdmissionDetailsRead(BaseModel):
 
 
 class AdmissionDetailsUpdate(BaseModel):
-    benefit_group: str | None = None
+    benefit_group: Literal["Льгот нет", "Многодетная", "Сирота", "Инвалидность"] | None = None
     residence_address: str | None = None
     base_class: Literal["9 класс", "11 класс", "ТИПО"] | None = None
     qualification: str | None = None
@@ -242,6 +243,14 @@ class ApplicationPublicStatus(BaseModel):
     updated_at: datetime
 
 
+class ApplicationTagRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    created_at: datetime
+
+
 class ApplicationRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -258,6 +267,7 @@ class ApplicationRead(BaseModel):
     education_details: EducationDetailsRead | None = None
     contest_profile: ContestProfileRead | None = None
     contest_choices: list[ContestChoiceRead] = Field(default_factory=list)
+    tags: list[ApplicationTagRead] = Field(default_factory=list)
     contest_visible: bool = False
     folder_id: int | None = None
     chat_id: int | None = None
@@ -300,6 +310,22 @@ class BulkMoveRequest(BulkIdsRequest):
 
 class BulkEducationDetailsUpdateRequest(BulkIdsRequest):
     update: EducationDetailsUpdate
+
+
+class BulkTagsRequest(BulkIdsRequest):
+    tags: list[str] = Field(min_length=1, max_length=20)
+
+    @model_validator(mode="after")
+    def normalize_tags(self) -> "BulkTagsRequest":
+        normalized = []
+        for raw_tag in self.tags:
+            name = raw_tag.strip().lstrip("#").strip().lower()
+            if not name or len(name) > 64 or not re.fullmatch(r"[\w\-]+", name, flags=re.UNICODE):
+                raise ValueError("Тег может содержать буквы, цифры, дефис и подчеркивание")
+            if name not in normalized:
+                normalized.append(name)
+        self.tags = normalized
+        return self
 
 
 class FolderRead(BaseModel):

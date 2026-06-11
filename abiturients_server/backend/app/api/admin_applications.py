@@ -1,11 +1,12 @@
 from datetime import date
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.rbac import get_current_user
 from app.db.session import get_db
-from app.models import Application, ApplicationStatus, Folder, Role, User
+from app.models import Application, ApplicationStatus, ApplicationTag, Folder, Role, User
 from app.schemas.dto import (
     ApplicationAdminUpdate,
     ApplicationRead,
@@ -13,6 +14,7 @@ from app.schemas.dto import (
     BulkIdsRequest,
     BulkMoveRequest,
     BulkRejectRequest,
+    BulkTagsRequest,
     RejectRequest,
     TeacherContactUpdate,
     validate_iin_birth_date,
@@ -98,6 +100,7 @@ def list_applications(
     group: str | None = None,
     curator_id: int | None = None,
     folder_id: int | None = None,
+    folder_recursive: bool = False,
     created_from: date | None = Query(default=None),
     created_to: date | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=500),
@@ -116,11 +119,69 @@ def list_applications(
         group,
         curator_id,
         folder_id,
+        folder_recursive,
         created_from,
         created_to,
     )
     apps = query.order_by(Application.created_at.desc()).offset(offset).limit(limit).all()
     return [serialize_application(app) for app in apps]
+
+
+def ensure_tag_operator(user: User) -> None:
+    if user.role not in {
+        Role.tech_admin.value,
+        Role.admissions_admin.value,
+        Role.education_admin.value,
+    }:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+
+
+@router.post("/bulk/tags", response_model=dict)
+def add_bulk_tags(
+    payload: BulkTagsRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, int]:
+    ensure_tag_operator(user)
+    applications = [get_visible_application_or_404(db, app_id, user) for app_id in payload.application_ids]
+    existing = set(
+        db.execute(
+            select(ApplicationTag.application_id, ApplicationTag.name).where(
+                ApplicationTag.application_id.in_(payload.application_ids),
+                ApplicationTag.name.in_(payload.tags),
+            )
+        ).all()
+    )
+    added = 0
+    for app in applications:
+        for tag in payload.tags:
+            if (app.id, tag) not in existing:
+                db.add(ApplicationTag(application_id=app.id, name=tag))
+                added += 1
+    db.commit()
+    return {"updated": len(applications), "added": added}
+
+
+@router.post("/bulk/tags/remove", response_model=dict)
+def remove_bulk_tags(
+    payload: BulkTagsRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, int]:
+    ensure_tag_operator(user)
+    for app_id in payload.application_ids:
+        get_visible_application_or_404(db, app_id, user)
+    tags = db.scalars(
+        select(ApplicationTag).where(
+            ApplicationTag.application_id.in_(payload.application_ids),
+            ApplicationTag.name.in_(payload.tags),
+        )
+    ).all()
+    updated_applications = len({tag.application_id for tag in tags})
+    for tag in tags:
+        db.delete(tag)
+    db.commit()
+    return {"updated": updated_applications, "removed": len(tags)}
 
 
 @router.get("/{application_id:int}", response_model=ApplicationRead)

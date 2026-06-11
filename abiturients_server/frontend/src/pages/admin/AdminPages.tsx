@@ -302,6 +302,9 @@ export function FileManagerPage() {
   const [folderId, setFolderId] = useState<number | null>(null);
   const [apps, setApps] = useState<Application[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
+  const [search, setSearch] = useState("");
+  const [tagInput, setTagInput] = useState("");
+  const [updatingTags, setUpdatingTags] = useState(false);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [deletingStudents, setDeletingStudents] = useState(false);
@@ -321,20 +324,31 @@ export function FileManagerPage() {
     setTree(nodes);
   };
 
-  const loadApps = async () => {
+  const loadApps = async (preserveSelection = false) => {
     if (!token) return;
-    if (!folderId) {
+    if (!folderId && !search.trim()) {
       setApps([]);
       setSelected([]);
       return;
     }
-    const items = await apiFetch<Application[]>(`/admin/applications?folder_id=${folderId}&limit=500`, { token });
+    const params = new URLSearchParams({ limit: "500" });
+    if (folderId) {
+      params.set("folder_id", String(folderId));
+      if (search.trim()) params.set("folder_recursive", "true");
+    }
+    if (search.trim()) params.set("search", search.trim());
+    const items = await apiFetch<Application[]>(`/admin/applications?${params.toString()}`, { token });
     setApps(items);
-    setSelected([]);
+    setSelected((current) => preserveSelection
+      ? current.filter((id) => items.some((app) => app.id === id))
+      : []);
   };
 
   useEffect(() => { void loadTree(); }, [token]);
-  useEffect(() => { void loadApps(); }, [token, folderId]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadApps(); }, 250);
+    return () => window.clearTimeout(timer);
+  }, [token, folderId, search]);
 
   const createFolder = async () => {
     if (!token) return;
@@ -392,6 +406,38 @@ export function FileManagerPage() {
     });
     await loadApps();
     await loadTree();
+  };
+
+  const selectedApps = apps.filter((app) => selected.includes(app.id));
+  const selectedTags = Array.from(new Set(selectedApps.flatMap((app) => app.tags.map((tag) => tag.name))))
+    .sort((left, right) => left.localeCompare(right, "ru"));
+
+  const updateTags = async (tagNames: string[], remove = false) => {
+    if (!token || !selected.length || !tagNames.length) return;
+    setError("");
+    setSuccess("");
+    setUpdatingTags(true);
+    try {
+      const normalized = tagNames.map((tag) => tag.trim().replace(/^#+/, "")).filter(Boolean);
+      if (!normalized.length) return;
+      await apiFetch(remove ? "/admin/applications/bulk/tags/remove" : "/admin/applications/bulk/tags", {
+        method: "POST",
+        token,
+        body: JSON.stringify({ application_ids: selected, tags: normalized }),
+      });
+      setTagInput("");
+      setSuccess(remove ? "Тег удален" : `Тег добавлен к ${selected.length} анкетам`);
+      await loadApps(true);
+    } catch (err) {
+      setError(apiMessage(err));
+    } finally {
+      setUpdatingTags(false);
+    }
+  };
+
+  const submitTag = async (event: FormEvent) => {
+    event.preventDefault();
+    await updateTags([tagInput]);
   };
 
   const startSelection = (event: ReactMouseEvent<HTMLDivElement>) => {
@@ -554,14 +600,55 @@ export function FileManagerPage() {
         </div>
         {error && <div className="form-error">{error}</div>}
         {success && <div className="form-success">{success}</div>}
+        <div className="folder-search">
+          <div className="search-box">
+            <Search size={18} />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Поиск по ФИО, ИИН или #тегу"
+            />
+          </div>
+          <span className="muted">
+            {folderId ? "Поиск выполняется в текущей папке и всех подпапках." : "Поиск выполняется по всем папкам."}
+          </span>
+        </div>
         <div className="bulk-panel">
           <span>Выбрано: {selected.length}</span>
+          {selected.length > 0 && (
+            <>
+              <strong>Теги:</strong>
+              <form className="tag-input-form" onSubmit={submitTag}>
+                <input
+                  value={tagInput}
+                  onChange={(event) => setTagInput(event.target.value)}
+                  placeholder="#выпуск-2026"
+                  disabled={updatingTags}
+                />
+              </form>
+              <div className="tag-list">
+                {selectedTags.map((tag) => (
+                  <span className="tag-chip" key={tag}>
+                    #{tag}
+                    <button
+                      type="button"
+                      title={`Удалить #${tag} у выбранных анкет`}
+                      onClick={() => void updateTags([tag], true)}
+                      disabled={updatingTags}
+                    >
+                      <X size={12} />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            </>
+          )}
           <span className="muted">Выделите рамкой или кликом, затем перетащите в папку слева.</span>
         </div>
         <div className="file-grid-shell" ref={gridRef} onMouseDown={startSelection}>
           {selectionBox && <div className="selection-box" style={selectionStyle} />}
           <div className="file-grid">
-            {childFolders.map((folder) => (
+            {!search.trim() && childFolders.map((folder) => (
               <article
                 key={`folder-${folder.id}`}
                 className={folder.id === dropTargetId ? "file-card folder-card drop-target" : "file-card folder-card"}
@@ -594,11 +681,19 @@ export function FileManagerPage() {
                 <h3>{app.full_name}</h3>
                 <p>{app.iin}</p>
                 <StatusBadge status={app.status} />
+                {app.tags.length > 0 && (
+                  <div className="application-tags">
+                    {app.tags.map((tag) => <span key={tag.id}>#{tag.name}</span>)}
+                  </div>
+                )}
               </article>
             ))}
           </div>
-          {!childFolders.length && !apps.length && (
+          {(!search.trim() && !childFolders.length && !apps.length) && (
             <EmptyState title="Папка пуста" text="Создайте подпапку или переместите сюда анкеты." />
+          )}
+          {search.trim() && !apps.length && (
+            <EmptyState title="Ничего не найдено" text="Проверьте ФИО, ИИН или тег." />
           )}
         </div>
       </main>
@@ -893,7 +988,16 @@ export function ContestPage() {
           <form className="success-modal panel-form contest-bulk-form" onSubmit={bulkUpdate} onMouseDown={(event) => event.stopPropagation()}>
             <h3>Изменить данные у {selected.length} заявок</h3>
             <p className="muted">Пустые поля останутся без изменений.</p>
-            <label><span>Льготная группа</span><input value={bulkForm.benefit_group} onChange={(event) => setBulkForm({ ...bulkForm, benefit_group: event.target.value })} placeholder="Без изменений" /></label>
+            <label>
+              <span>Льготная группа</span>
+              <select value={bulkForm.benefit_group} onChange={(event) => setBulkForm({ ...bulkForm, benefit_group: event.target.value })}>
+                <option value="">Без изменений</option>
+                <option value="Льгот нет">Льгот нет</option>
+                <option value="Многодетная">Многодетная</option>
+                <option value="Сирота">Сирота</option>
+                <option value="Инвалидность">Инвалидность</option>
+              </select>
+            </label>
             <label><span>Прописка</span><input value={bulkForm.residence_address} onChange={(event) => setBulkForm({ ...bulkForm, residence_address: event.target.value })} placeholder="Без изменений" /></label>
             <label>
               <span>База поступления</span>
@@ -1484,7 +1588,16 @@ export function ApplicationDetailsPage() {
                 <small>{selectedContestChoice.specialty.qualification}</small>
               </div>
             )}
-            <label><span>Льготная группа</span><input className={emptyFieldClass(app.contest_profile?.benefit_group)} disabled={!canAdmissions} value={app.contest_profile?.benefit_group ?? ""} onChange={(e) => updateContest("benefit_group", e.target.value)} placeholder="Не выбрано" /></label>
+            <label>
+              <span>Льготная группа</span>
+              <select className={emptyFieldClass(app.contest_profile?.benefit_group)} disabled={!canAdmissions} value={app.contest_profile?.benefit_group ?? ""} onChange={(e) => updateContest("benefit_group", e.target.value)}>
+                <option value="" disabled>Не выбрано</option>
+                <option value="Льгот нет">Льгот нет</option>
+                <option value="Многодетная">Многодетная</option>
+                <option value="Сирота">Сирота</option>
+                <option value="Инвалидность">Инвалидность</option>
+              </select>
+            </label>
             <label><span>Прописка</span><input className={emptyFieldClass(app.contest_profile?.residence_address)} disabled={!canAdmissions} value={app.contest_profile?.residence_address ?? ""} onChange={(e) => updateContest("residence_address", e.target.value)} placeholder="Не выбрано" /></label>
             <label>
               <span>База поступления</span>
@@ -1594,7 +1707,16 @@ export function ApplicationDetailsPage() {
 
         {activeTab === "admissions" && !isTeacher && (
           <form className="panel-form tab-panel">
-            <label><span>Льготная группа</span><input className={emptyFieldClass(app.admission_details?.benefit_group)} disabled={!canAdmissions} value={app.admission_details?.benefit_group ?? ""} onChange={(e) => updateAdmission("benefit_group", e.target.value)} placeholder="Не выбрано" /></label>
+            <label>
+              <span>Льготная группа</span>
+              <select className={emptyFieldClass(app.admission_details?.benefit_group)} disabled={!canAdmissions} value={app.admission_details?.benefit_group ?? ""} onChange={(e) => updateAdmission("benefit_group", e.target.value)}>
+                <option value="" disabled>Не выбрано</option>
+                <option value="Льгот нет">Льгот нет</option>
+                <option value="Многодетная">Многодетная</option>
+                <option value="Сирота">Сирота</option>
+                <option value="Инвалидность">Инвалидность</option>
+              </select>
+            </label>
             <label><span>Прописка</span><input className={emptyFieldClass(app.admission_details?.residence_address)} disabled={!canAdmissions} value={app.admission_details?.residence_address ?? ""} onChange={(e) => updateAdmission("residence_address", e.target.value)} placeholder="Не выбрано" /></label>
             <label>
               <span>База поступления</span>

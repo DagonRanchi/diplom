@@ -1004,6 +1004,64 @@ dd.empty-field {
   box-shadow: none;
 }
 
+.folder-search {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.folder-search .search-box {
+  flex: 1 1 360px;
+}
+
+.tag-input-form {
+  min-width: 190px;
+}
+
+.tag-input-form input {
+  min-height: 38px;
+  padding: 0 10px;
+}
+
+.tag-list,
+.application-tags {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tag-chip,
+.application-tags span {
+  border-radius: 999px;
+  padding: 5px 9px;
+  background: #edf7ff;
+  border: 1px solid #c9e4f7;
+  color: var(--blue-700);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.tag-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.tag-chip button {
+  min-height: 0;
+  padding: 0;
+  border: 0;
+  box-shadow: none;
+  background: transparent;
+  color: #9d1f2e;
+}
+
+.application-tags {
+  margin-top: auto;
+}
+
 .data-table {
   border-radius: 8px;
   border: 1px solid var(--line);

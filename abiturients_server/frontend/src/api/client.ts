@@ -69,6 +69,12 @@ export type ContestProfile = {
   accepted_specialty?: Specialty | null;
 };
 
+export type ApplicationTag = {
+  id: number;
+  name: string;
+  created_at: string;
+};
+
 export type Application = {
   id: number;
   iin: string;
@@ -83,6 +89,7 @@ export type Application = {
   education_details?: EducationDetails | null;
   contest_profile?: ContestProfile | null;
   contest_choices: ContestChoice[];
+  tags: ApplicationTag[];
   contest_visible: boolean;
   folder_id?: number | null;
   chat_id?: number | null;

@@ -232,6 +232,8 @@ admin12345
 - `POST /admin/applications/bulk/reject`
 - `POST /admin/applications/bulk/accept` — legacy endpoint, прямое принятие отключено
 - `PATCH /admin/applications/bulk/update`
+- `POST /admin/applications/bulk/tags`
+- `POST /admin/applications/bulk/tags/remove`
 - `GET|PATCH /education/applications/{id}/details`
 - `POST /education/applications/{id}/save`
 - `PATCH /education/applications/bulk/details`
@@ -258,3 +260,7 @@ admin12345
 Вложения чата ограничены 10 МБ. Поддерживаются PDF, изображения, Word и Excel; содержимое хранится в базе данных и локальном каталоге `UPLOAD_DIR`.
 
 База поступления выбирается из фиксированного списка: `9 класс`, `11 класс`, `ТИПО`. В конкурсном реестре карточки можно выделять кликом, `Ctrl`+кликом или рамкой для массового изменения, принятия и отклонения.
+
+Льготная группа выбирается из списка: `Льгот нет`, `Многодетная`, `Сирота`, `Инвалидность`.
+
+В файловом менеджере выделенным анкетам можно массово назначать теги в формате `#выпуск-2026`. Единая строка поиска ищет по ФИО, ИИН и тегам; при выборе папки поиск включает все вложенные папки.

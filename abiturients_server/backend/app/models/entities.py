@@ -122,6 +122,9 @@ class Application(Base):
     contest_choices: Mapped[list[ContestChoice]] = relationship(
         back_populates="application", cascade="all, delete-orphan"
     )
+    tags: Mapped[list[ApplicationTag]] = relationship(
+        back_populates="application", cascade="all, delete-orphan"
+    )
 
 
 class AdmissionDetails(Base):
@@ -216,6 +219,21 @@ class FolderItem(Base):
 
     folder: Mapped[Folder] = relationship(back_populates="items")
     application: Mapped[Application] = relationship(back_populates="folder_item")
+
+
+class ApplicationTag(Base):
+    __tablename__ = "application_tags"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    application_id: Mapped[int] = mapped_column(
+        ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    application: Mapped[Application] = relationship(back_populates="tags")
+
+    __table_args__ = (UniqueConstraint("application_id", "name", name="uq_application_tag_name"),)
 
 
 class Chat(Base):
