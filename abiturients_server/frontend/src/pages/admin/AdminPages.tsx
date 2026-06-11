@@ -46,6 +46,10 @@ function formatDate(value: string) {
   return new Intl.DateTimeFormat("ru-RU").format(new Date(value));
 }
 
+function emptyFieldClass(value: unknown) {
+  return value === null || value === undefined || value === "" ? "empty-field" : undefined;
+}
+
 function flattenFolders(nodes: FolderNode[]): FolderNode[] {
   return nodes.flatMap((node) => [node, ...flattenFolders(node.children ?? [])]);
 }
@@ -603,11 +607,26 @@ export function FileManagerPage() {
 }
 
 export function ContestPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
   const [entries, setEntries] = useState<ContestEntry[]>([]);
   const [selectedPath, setSelectedPath] = useState<[string, string, string] | null>(null);
+  const [selected, setSelected] = useState<number[]>([]);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [bulkForm, setBulkForm] = useState({
+    benefit_group: "",
+    residence_address: "",
+    base_class: "",
+    enrollment_type: "",
+    locality_type: "",
+    instruction_language: "",
+    study_form: "",
+    needs_dormitory: "",
+  });
+  const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; x: number; y: number } | null>(null);
+  const gridRef = useRef<HTMLDivElement | null>(null);
 
   const load = async () => {
     if (!token) return;
@@ -615,8 +634,15 @@ export function ContestPage() {
       const items = await apiFetch<ContestEntry[]>("/contest/entries", { token });
       setEntries(items);
       setError("");
-      if (!selectedPath && items[0]) {
+      const currentPathExists = selectedPath && items.some((item) => (
+        item.base_class === selectedPath[0]
+        && item.qualification === selectedPath[1]
+        && item.specialty === selectedPath[2]
+      ));
+      if (!currentPathExists && items[0]) {
         setSelectedPath([items[0].base_class, items[0].qualification, items[0].specialty]);
+      } else if (!items.length) {
+        setSelectedPath(null);
       }
     } catch (err) {
       setError(apiMessage(err));
@@ -624,6 +650,7 @@ export function ContestPage() {
   };
 
   useEffect(() => { void load(); }, [token]);
+  useEffect(() => { setSelected([]); }, [selectedPath]);
 
   const tree = useMemo(() => {
     const result: Record<string, Record<string, string[]>> = {};
@@ -644,6 +671,127 @@ export function ContestPage() {
         && entry.specialty === selectedPath[2]
       ))
     : [];
+  const canEdit = user?.role === "tech_admin" || user?.role === "admissions_admin";
+  const canDecide = canEdit || user?.role === "education_admin";
+
+  const clickCard = (choiceId: number, event: ReactMouseEvent<HTMLElement>) => {
+    if (event.ctrlKey || event.metaKey) {
+      setSelected((current) => current.includes(choiceId)
+        ? current.filter((id) => id !== choiceId)
+        : [...current, choiceId]);
+      return;
+    }
+    setSelected((current) => current.includes(choiceId) && current.length > 1 ? current : [choiceId]);
+  };
+
+  const startSelection = (event: ReactMouseEvent<HTMLDivElement>) => {
+    if (event.button !== 0 || (event.target as HTMLElement).closest(".file-card")) return;
+    const grid = gridRef.current;
+    if (!grid) return;
+    const bounds = grid.getBoundingClientRect();
+    const startX = event.clientX - bounds.left;
+    const startY = event.clientY - bounds.top;
+    setSelected([]);
+    setSelectionBox({ startX, startY, x: startX, y: startY });
+
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const x = moveEvent.clientX - bounds.left;
+      const y = moveEvent.clientY - bounds.top;
+      setSelectionBox({ startX, startY, x, y });
+      const left = Math.min(startX, x);
+      const top = Math.min(startY, y);
+      const right = Math.max(startX, x);
+      const bottom = Math.max(startY, y);
+      const ids = Array.from(grid.querySelectorAll<HTMLElement>("[data-choice-id]"))
+        .filter((card) => {
+          const rect = card.getBoundingClientRect();
+          const cardLeft = rect.left - bounds.left;
+          const cardTop = rect.top - bounds.top;
+          return cardLeft < right
+            && cardLeft + rect.width > left
+            && cardTop < bottom
+            && cardTop + rect.height > top;
+        })
+        .map((card) => Number(card.dataset.choiceId))
+        .filter(Boolean);
+      setSelected(ids);
+    };
+    const onMouseUp = () => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      setSelectionBox(null);
+    };
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  };
+
+  const bulkDecision = async (decision: "accept" | "reject") => {
+    if (!token || !selected.length) return;
+    const action = decision === "accept" ? "принять" : "отклонить";
+    if (!window.confirm(`${action[0].toUpperCase()}${action.slice(1)} выбранные конкурсные заявки (${selected.length})?`)) return;
+    setError("");
+    setSuccess("");
+    try {
+      await apiFetch(`/contest/bulk/${decision}`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({ choice_ids: selected }),
+      });
+      setSuccess(decision === "accept" ? "Выбранные заявки приняты" : "Выбранные направления отклонены");
+      setSelected([]);
+      await load();
+    } catch (err) {
+      setError(apiMessage(err));
+    }
+  };
+
+  const bulkUpdate = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!token || !selected.length) return;
+    const update = Object.fromEntries(
+      Object.entries(bulkForm)
+        .filter(([, value]) => value !== "")
+        .map(([key, value]) => [key, key === "needs_dormitory" ? value === "yes" : value])
+    );
+    if (!Object.keys(update).length) {
+      setError("Выберите хотя бы одно поле для изменения");
+      return;
+    }
+    setError("");
+    setSuccess("");
+    try {
+      await apiFetch("/contest/bulk/update", {
+        method: "PATCH",
+        token,
+        body: JSON.stringify({ choice_ids: selected, update }),
+      });
+      setShowBulkEdit(false);
+      setSelected([]);
+      setBulkForm({
+        benefit_group: "",
+        residence_address: "",
+        base_class: "",
+        enrollment_type: "",
+        locality_type: "",
+        instruction_language: "",
+        study_form: "",
+        needs_dormitory: "",
+      });
+      setSuccess(`Данные обновлены для ${selected.length} заявок`);
+      await load();
+    } catch (err) {
+      setError(apiMessage(err));
+    }
+  };
+
+  const selectionStyle = selectionBox
+    ? {
+        left: Math.min(selectionBox.startX, selectionBox.x),
+        top: Math.min(selectionBox.startY, selectionBox.y),
+        width: Math.abs(selectionBox.x - selectionBox.startX),
+        height: Math.abs(selectionBox.y - selectionBox.startY),
+      }
+    : undefined;
 
   return (
     <section className="file-manager contest-manager">
@@ -696,27 +844,114 @@ export function ContestPage() {
           <button className="secondary-button" onClick={load}><RefreshCw size={16} /> Обновить</button>
         </div>
         {error && <div className="form-error">{error}</div>}
-        <div className="file-grid">
-          {visibleEntries.map((entry) => (
-            <article
-              key={entry.choice_id}
-              className="file-card"
-              onDoubleClick={() => navigate(`/admin/applications/${entry.application_id}?contestChoice=${entry.choice_id}`)}
-            >
-              <h3>{entry.full_name}</h3>
-              <p>{entry.iin}</p>
-              <StatusBadge status="in_contest" />
-              <button
-                className="secondary-button"
-                onClick={() => navigate(`/admin/applications/${entry.application_id}?contestChoice=${entry.choice_id}`)}
+        {success && <div className="form-success">{success}</div>}
+        <div className="bulk-panel">
+          <span>Выбрано: {selected.length}</span>
+          {visibleEntries.length > 0 && (
+            <button type="button" onClick={() => setSelected(
+              selected.length === visibleEntries.length ? [] : visibleEntries.map((entry) => entry.choice_id)
+            )}>
+              {selected.length === visibleEntries.length ? "Снять выделение" : "Выбрать все"}
+            </button>
+          )}
+          {canEdit && selected.length > 0 && <button type="button" onClick={() => setShowBulkEdit(true)}><Pencil size={16} /> Изменить данные</button>}
+          {canDecide && selected.length > 0 && <button type="button" onClick={() => bulkDecision("accept")}><Check size={16} /> Принять</button>}
+          {canDecide && selected.length > 0 && <button type="button" onClick={() => bulkDecision("reject")}><X size={16} /> Отклонить</button>}
+          <span className="muted">Выделяйте карточки кликом, Ctrl+кликом или рамкой.</span>
+        </div>
+        <div className="file-grid-shell" ref={gridRef} onMouseDown={startSelection}>
+          {selectionBox && <div className="selection-box" style={selectionStyle} />}
+          <div className="file-grid">
+            {visibleEntries.map((entry) => (
+              <article
+                key={entry.choice_id}
+                data-choice-id={entry.choice_id}
+                className={selected.includes(entry.choice_id) ? "file-card selected" : "file-card"}
+                onClick={(event) => clickCard(entry.choice_id, event)}
+                onDoubleClick={() => navigate(`/admin/applications/${entry.application_id}?contestChoice=${entry.choice_id}`)}
               >
-                Открыть
-              </button>
-            </article>
-          ))}
+                <h3>{entry.full_name}</h3>
+                <p>{entry.iin}</p>
+                <StatusBadge status="in_contest" />
+                <button
+                  className="secondary-button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    navigate(`/admin/applications/${entry.application_id}?contestChoice=${entry.choice_id}`);
+                  }}
+                >
+                  Открыть
+                </button>
+              </article>
+            ))}
+          </div>
         </div>
         {selectedPath && !visibleEntries.length && <EmptyState title="Нет анкет" text="В этой конкурсной папке нет заявок." />}
       </main>
+      {showBulkEdit && (
+        <div className="modal-backdrop" onMouseDown={() => setShowBulkEdit(false)}>
+          <form className="success-modal panel-form contest-bulk-form" onSubmit={bulkUpdate} onMouseDown={(event) => event.stopPropagation()}>
+            <h3>Изменить данные у {selected.length} заявок</h3>
+            <p className="muted">Пустые поля останутся без изменений.</p>
+            <label><span>Льготная группа</span><input value={bulkForm.benefit_group} onChange={(event) => setBulkForm({ ...bulkForm, benefit_group: event.target.value })} placeholder="Без изменений" /></label>
+            <label><span>Прописка</span><input value={bulkForm.residence_address} onChange={(event) => setBulkForm({ ...bulkForm, residence_address: event.target.value })} placeholder="Без изменений" /></label>
+            <label>
+              <span>База поступления</span>
+              <select value={bulkForm.base_class} onChange={(event) => setBulkForm({ ...bulkForm, base_class: event.target.value })}>
+                <option value="">Без изменений</option>
+                <option value="9 класс">9 класс</option>
+                <option value="11 класс">11 класс</option>
+                <option value="ТИПО">ТИПО</option>
+              </select>
+            </label>
+            <label>
+              <span>Вид зачисления</span>
+              <select value={bulkForm.enrollment_type} onChange={(event) => setBulkForm({ ...bulkForm, enrollment_type: event.target.value })}>
+                <option value="">Без изменений</option>
+                <option value="general">На общих основаниях</option>
+                <option value="reinstated">Как восстановившийся</option>
+                <option value="transfer">По переводу</option>
+              </select>
+            </label>
+            <label>
+              <span>Тип местности</span>
+              <select value={bulkForm.locality_type} onChange={(event) => setBulkForm({ ...bulkForm, locality_type: event.target.value })}>
+                <option value="">Без изменений</option>
+                <option value="urban">Городская</option>
+                <option value="rural">Сельская</option>
+              </select>
+            </label>
+            <label>
+              <span>Язык обучения</span>
+              <select value={bulkForm.instruction_language} onChange={(event) => setBulkForm({ ...bulkForm, instruction_language: event.target.value })}>
+                <option value="">Без изменений</option>
+                <option value="russian">Русский</option>
+                <option value="kazakh">Казахский</option>
+              </select>
+            </label>
+            <label>
+              <span>Форма обучения</span>
+              <select value={bulkForm.study_form} onChange={(event) => setBulkForm({ ...bulkForm, study_form: event.target.value })}>
+                <option value="">Без изменений</option>
+                <option value="full_time">Очная</option>
+                <option value="part_time">Заочная</option>
+              </select>
+            </label>
+            <label>
+              <span>Общежитие</span>
+              <select value={bulkForm.needs_dormitory} onChange={(event) => setBulkForm({ ...bulkForm, needs_dormitory: event.target.value })}>
+                <option value="">Без изменений</option>
+                <option value="yes">Нужно</option>
+                <option value="no">Не нужно</option>
+              </select>
+            </label>
+            <div className="action-row">
+              <button type="button" onClick={() => setShowBulkEdit(false)}>Отмена</button>
+              <button type="submit" className="primary-button"><Save size={16} /> Применить</button>
+            </div>
+          </form>
+        </div>
+      )}
     </section>
   );
 }
@@ -1168,12 +1403,12 @@ export function ApplicationDetailsPage() {
       qualification,
       items.sort((left, right) => left.name.localeCompare(right.name, "ru")),
     ] as const);
-  const curatorName = teachers.find((teacher) => teacher.id === app.education_details?.curator_id)?.full_name ?? "Не назначен";
+  const curatorName = teachers.find((teacher) => teacher.id === app.education_details?.curator_id)?.full_name ?? "Не выбрано";
   const paymentLabel = app.education_details?.payment_type === "free"
     ? "Бесплатно"
     : app.education_details?.payment_type === "paid"
       ? "Платно"
-      : "Не указано";
+      : "Не выбрано";
   const enrollmentLabel = {
     general: "На общих основаниях",
     reinstated: "Как восстановившийся",
@@ -1184,7 +1419,7 @@ export function ApplicationDetailsPage() {
     good: "Хорошо",
     satisfactory: "Удовлетворительно",
   };
-  const performanceLabel = performanceLabels[app.education_details?.academic_performance ?? ""] ?? "Нет данных";
+  const performanceLabel = performanceLabels[app.education_details?.academic_performance ?? ""] ?? "Не выбрано";
   const tabs: { id: DetailsTab; label: string }[] = [
     { id: "main", label: "Основные данные" },
     ...(showContestTab ? [{ id: "contest" as DetailsTab, label: "Конкурс" }] : []),
@@ -1249,9 +1484,17 @@ export function ApplicationDetailsPage() {
                 <small>{selectedContestChoice.specialty.qualification}</small>
               </div>
             )}
-            <label><span>Льготная группа</span><input disabled={!canAdmissions} value={app.contest_profile?.benefit_group ?? ""} onChange={(e) => updateContest("benefit_group", e.target.value)} /></label>
-            <label><span>Место жительства</span><input disabled={!canAdmissions} value={app.contest_profile?.residence_address ?? ""} onChange={(e) => updateContest("residence_address", e.target.value)} /></label>
-            <label><span>База поступления</span><input disabled={!canAdmissions} value={app.contest_profile?.base_class ?? ""} onChange={(e) => updateContest("base_class", e.target.value)} placeholder="9 класс / 11 класс" /></label>
+            <label><span>Льготная группа</span><input className={emptyFieldClass(app.contest_profile?.benefit_group)} disabled={!canAdmissions} value={app.contest_profile?.benefit_group ?? ""} onChange={(e) => updateContest("benefit_group", e.target.value)} placeholder="Не выбрано" /></label>
+            <label><span>Прописка</span><input className={emptyFieldClass(app.contest_profile?.residence_address)} disabled={!canAdmissions} value={app.contest_profile?.residence_address ?? ""} onChange={(e) => updateContest("residence_address", e.target.value)} placeholder="Не выбрано" /></label>
+            <label>
+              <span>База поступления</span>
+              <select className={emptyFieldClass(app.contest_profile?.base_class)} disabled={!canAdmissions} value={app.contest_profile?.base_class ?? ""} onChange={(e) => updateContest("base_class", e.target.value)}>
+                <option value="" disabled>Не выбрано</option>
+                <option value="9 класс">9 класс</option>
+                <option value="11 класс">11 класс</option>
+                <option value="ТИПО">ТИПО</option>
+              </select>
+            </label>
             <label>
               <span>Вид зачисления</span>
               <select disabled={!canAdmissions} value={app.contest_profile?.enrollment_type ?? "general"} onChange={(e) => updateContest("enrollment_type", e.target.value)}>
@@ -1269,8 +1512,8 @@ export function ApplicationDetailsPage() {
             </label>
             <label>
               <span>Язык обучения</span>
-              <select disabled={!canAdmissions} value={app.contest_profile?.instruction_language ?? ""} onChange={(e) => updateContest("instruction_language", e.target.value || null)}>
-                <option value="">Не выбран</option>
+              <select className={emptyFieldClass(app.contest_profile?.instruction_language)} disabled={!canAdmissions} value={app.contest_profile?.instruction_language ?? ""} onChange={(e) => updateContest("instruction_language", e.target.value || null)}>
+                <option value="" disabled>Не выбрано</option>
                 <option value="russian">Русский</option>
                 <option value="kazakh">Казахский</option>
               </select>
@@ -1334,7 +1577,9 @@ export function ApplicationDetailsPage() {
               {canAdmissions && ["new", "in_admissions_review", "in_contest"].includes(app.status) && (
                 <>
                   <button type="button" onClick={() => saveContest(false)}><Save size={16} /> Сохранить</button>
-                  <button type="button" className="primary-button" onClick={() => saveContest(true)}><Check size={16} /> Отправить на конкурс</button>
+                  {["new", "in_admissions_review"].includes(app.status) && (
+                    <button type="button" className="primary-button" onClick={() => saveContest(true)}><Check size={16} /> Отправить на конкурс</button>
+                  )}
                 </>
               )}
               {canContestDecision && app.status === "in_contest" && selectedContestChoice && (
@@ -1349,9 +1594,17 @@ export function ApplicationDetailsPage() {
 
         {activeTab === "admissions" && !isTeacher && (
           <form className="panel-form tab-panel">
-            <label><span>Льготная группа</span><input disabled={!canAdmissions} value={app.admission_details?.benefit_group ?? ""} onChange={(e) => updateAdmission("benefit_group", e.target.value)} /></label>
-            <label><span>Место жительства</span><input disabled={!canAdmissions} value={app.admission_details?.residence_address ?? ""} onChange={(e) => updateAdmission("residence_address", e.target.value)} /></label>
-            <label><span>База поступления</span><input disabled={!canAdmissions} value={app.admission_details?.base_class ?? ""} onChange={(e) => updateAdmission("base_class", e.target.value)} placeholder="9 класс / 11 класс" /></label>
+            <label><span>Льготная группа</span><input className={emptyFieldClass(app.admission_details?.benefit_group)} disabled={!canAdmissions} value={app.admission_details?.benefit_group ?? ""} onChange={(e) => updateAdmission("benefit_group", e.target.value)} placeholder="Не выбрано" /></label>
+            <label><span>Прописка</span><input className={emptyFieldClass(app.admission_details?.residence_address)} disabled={!canAdmissions} value={app.admission_details?.residence_address ?? ""} onChange={(e) => updateAdmission("residence_address", e.target.value)} placeholder="Не выбрано" /></label>
+            <label>
+              <span>База поступления</span>
+              <select className={emptyFieldClass(app.admission_details?.base_class)} disabled={!canAdmissions} value={app.admission_details?.base_class ?? ""} onChange={(e) => updateAdmission("base_class", e.target.value)}>
+                <option value="" disabled>Не выбрано</option>
+                <option value="9 класс">9 класс</option>
+                <option value="11 класс">11 класс</option>
+                <option value="ТИПО">ТИПО</option>
+              </select>
+            </label>
             <label>
               <span>Вид зачисления</span>
               <select disabled={!canAdmissions} value={app.admission_details?.enrollment_type ?? "general"} onChange={(e) => updateAdmission("enrollment_type", e.target.value)}>
@@ -1369,8 +1622,8 @@ export function ApplicationDetailsPage() {
             </label>
             <label>
               <span>Язык обучения</span>
-              <select disabled={!canAdmissions} value={app.admission_details?.instruction_language ?? ""} onChange={(e) => updateAdmission("instruction_language", e.target.value || null)}>
-                <option value="">Не выбран</option>
+              <select className={emptyFieldClass(app.admission_details?.instruction_language)} disabled={!canAdmissions} value={app.admission_details?.instruction_language ?? ""} onChange={(e) => updateAdmission("instruction_language", e.target.value || null)}>
+                <option value="" disabled>Не выбрано</option>
                 <option value="russian">Русский</option>
                 <option value="kazakh">Казахский</option>
               </select>
@@ -1391,12 +1644,12 @@ export function ApplicationDetailsPage() {
             </label>
             <label>
               <span>Специальность</span>
-              <select disabled={!canAdmissions} value={app.admission_details?.specialty ?? ""} onChange={(e) => {
+              <select className={emptyFieldClass(app.admission_details?.specialty)} disabled={!canAdmissions} value={app.admission_details?.specialty ?? ""} onChange={(e) => {
                 const specialty = specialties.find((item) => item.name === e.target.value);
                 updateAdmission("specialty", e.target.value);
                 updateAdmission("qualification", specialty?.qualification ?? "");
               }}>
-                <option value="">Выберите</option>
+                <option value="" disabled>Не выбрано</option>
                 {groupedSpecialties.map(([qualification, items]) => (
                   <optgroup key={qualification} label={qualification}>
                     {items.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
@@ -1404,7 +1657,7 @@ export function ApplicationDetailsPage() {
                 ))}
               </select>
             </label>
-            <label><span>Квалификация</span><input disabled={!canAdmissions} value={app.admission_details?.qualification ?? ""} onChange={(e) => updateAdmission("qualification", e.target.value)} /></label>
+            <label><span>Квалификация</span><input className={emptyFieldClass(app.admission_details?.qualification)} disabled={!canAdmissions} value={app.admission_details?.qualification ?? ""} onChange={(e) => updateAdmission("qualification", e.target.value)} placeholder="Не выбрано" /></label>
             {canAdmissions && (
               <div className="action-row">
                 <button type="button" onClick={() => saveApplication()}><Save size={16} /> Сохранить</button>
@@ -1419,17 +1672,17 @@ export function ApplicationDetailsPage() {
           <form className="panel-form tab-panel">
             <label>
               <span>Куратор</span>
-              <select value={app.education_details?.curator_id ?? ""} onChange={(e) => updateEducation("curator_id", e.target.value ? Number(e.target.value) : null)}>
-                <option value="">Выберите преподавателя</option>
+              <select className={emptyFieldClass(app.education_details?.curator_id)} value={app.education_details?.curator_id ?? ""} onChange={(e) => updateEducation("curator_id", e.target.value ? Number(e.target.value) : null)}>
+                <option value="" disabled>Не выбрано</option>
                 {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.full_name}</option>)}
               </select>
             </label>
-            <label><span>Номер группы</span><input value={app.education_details?.group_number ?? ""} onChange={(e) => updateEducation("group_number", e.target.value)} placeholder="ИС-1-24" /></label>
-            <label><span>Курс</span><input type="number" min={1} max={4} value={app.education_details?.course ?? ""} onChange={(e) => updateEducation("course", e.target.value ? Number(e.target.value) : null)} /></label>
+            <label><span>Номер группы</span><input className={emptyFieldClass(app.education_details?.group_number)} value={app.education_details?.group_number ?? ""} onChange={(e) => updateEducation("group_number", e.target.value)} placeholder="Не выбрано" /></label>
+            <label><span>Курс</span><input className={emptyFieldClass(app.education_details?.course)} type="number" min={1} max={4} value={app.education_details?.course ?? ""} onChange={(e) => updateEducation("course", e.target.value ? Number(e.target.value) : null)} placeholder="Не выбрано" /></label>
             <label>
               <span>Оплата</span>
-              <select value={app.education_details?.payment_type ?? ""} onChange={(e) => updateEducation("payment_type", e.target.value || null)}>
-                <option value="">Выберите</option>
+              <select className={emptyFieldClass(app.education_details?.payment_type)} value={app.education_details?.payment_type ?? ""} onChange={(e) => updateEducation("payment_type", e.target.value || null)}>
+                <option value="" disabled>Не выбрано</option>
                 <option value="free">Бесплатно</option>
                 <option value="paid">Платно</option>
               </select>
@@ -1437,8 +1690,8 @@ export function ApplicationDetailsPage() {
             <label className="checkbox-line"><input type="checkbox" checked={Boolean(app.education_details?.is_state_grant)} onChange={(e) => updateEducation("is_state_grant", e.target.checked)} /> Госзаказ</label>
             <label>
               <span>Успеваемость</span>
-              <select value={app.education_details?.academic_performance ?? ""} onChange={(e) => updateEducation("academic_performance", e.target.value || null)}>
-                <option value="">Нет данных</option>
+              <select className={emptyFieldClass(app.education_details?.academic_performance)} value={app.education_details?.academic_performance ?? ""} onChange={(e) => updateEducation("academic_performance", e.target.value || null)}>
+                <option value="" disabled>Не выбрано</option>
                 <option value="excellent">Отлично</option>
                 <option value="good">Хорошо</option>
                 <option value="satisfactory">Удовлетворительно</option>
@@ -1474,22 +1727,22 @@ export function ApplicationDetailsPage() {
               <div><dt>ИИН</dt><dd>{app.iin}</dd></div>
               <div><dt>ФИО</dt><dd>{app.full_name}</dd></div>
               <div><dt>Дата рождения</dt><dd>{formatDate(app.birth_date)}</dd></div>
-              <div><dt>Место жительства</dt><dd>{app.admission_details?.residence_address ?? "Не указано"}</dd></div>
+              <div><dt>Прописка</dt><dd className={emptyFieldClass(app.admission_details?.residence_address)}>{app.admission_details?.residence_address ?? "Не выбрано"}</dd></div>
               <div><dt>Тип местности</dt><dd>{app.admission_details?.locality_type === "rural" ? "Сельская местность" : "Городская местность"}</dd></div>
               <div><dt>Email</dt><dd>{app.email}</dd></div>
               <div><dt>Телефон</dt><dd>{app.phone}</dd></div>
-              <div><dt>База поступления</dt><dd>{app.admission_details?.base_class ?? "Не указано"}</dd></div>
+              <div><dt>База поступления</dt><dd className={emptyFieldClass(app.admission_details?.base_class)}>{app.admission_details?.base_class ?? "Не выбрано"}</dd></div>
               <div><dt>Вид зачисления</dt><dd>{enrollmentLabel}</dd></div>
-              <div><dt>Язык обучения</dt><dd>{app.admission_details?.instruction_language === "russian" ? "Русский" : app.admission_details?.instruction_language === "kazakh" ? "Казахский" : "Не указан"}</dd></div>
+              <div><dt>Язык обучения</dt><dd className={emptyFieldClass(app.admission_details?.instruction_language)}>{app.admission_details?.instruction_language === "russian" ? "Русский" : app.admission_details?.instruction_language === "kazakh" ? "Казахский" : "Не выбрано"}</dd></div>
               <div><dt>Форма обучения</dt><dd>{app.admission_details?.study_form === "part_time" ? "Заочная" : "Очная"}</dd></div>
               <div><dt>Общежитие</dt><dd>{app.admission_details?.needs_dormitory ? "Нужно" : "Не нужно"}</dd></div>
-              <div><dt>Курс</dt><dd>{app.education_details?.course ?? "Не указано"}</dd></div>
-              <div><dt>Группа</dt><dd>{app.education_details?.group_number ?? "Не указана"}</dd></div>
-              <div><dt>Куратор</dt><dd>{curatorName}</dd></div>
-              <div><dt>Квалификация</dt><dd>{app.admission_details?.qualification ?? "Не указана"}</dd></div>
-              <div><dt>Специальность</dt><dd>{app.admission_details?.specialty ?? "Не указана"}</dd></div>
-              <div><dt>Оплата</dt><dd>{paymentLabel}</dd></div>
-              <div><dt>Успеваемость</dt><dd>{performanceLabel}</dd></div>
+              <div><dt>Курс</dt><dd className={emptyFieldClass(app.education_details?.course)}>{app.education_details?.course ?? "Не выбрано"}</dd></div>
+              <div><dt>Группа</dt><dd className={emptyFieldClass(app.education_details?.group_number)}>{app.education_details?.group_number ?? "Не выбрано"}</dd></div>
+              <div><dt>Куратор</dt><dd className={emptyFieldClass(app.education_details?.curator_id)}>{curatorName}</dd></div>
+              <div><dt>Квалификация</dt><dd className={emptyFieldClass(app.admission_details?.qualification)}>{app.admission_details?.qualification ?? "Не выбрано"}</dd></div>
+              <div><dt>Специальность</dt><dd className={emptyFieldClass(app.admission_details?.specialty)}>{app.admission_details?.specialty ?? "Не выбрано"}</dd></div>
+              <div><dt>Оплата</dt><dd className={emptyFieldClass(app.education_details?.payment_type)}>{paymentLabel}</dd></div>
+              <div><dt>Успеваемость</dt><dd className={emptyFieldClass(app.education_details?.academic_performance)}>{performanceLabel}</dd></div>
               <div><dt>Стипендия</dt><dd>{app.education_details?.has_scholarship ? `${app.education_details.scholarship_amount ?? 0} ₸` : "Нет"}</dd></div>
               <div><dt>Академический отпуск</dt><dd>{app.education_details?.academic_leave ? "Да" : "Нет"}</dd></div>
             </dl>

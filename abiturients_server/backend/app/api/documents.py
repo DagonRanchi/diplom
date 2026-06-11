@@ -197,7 +197,7 @@ def download_application_pdf(
             ("Дата рождения", app.birth_date.strftime("%d.%m.%Y")),
             ("Телефон", app.phone),
             ("Email", app.email),
-            ("Адрес проживания", admission.residence_address if admission else None),
+            ("Прописка", admission.residence_address if admission else None),
             ("Тип местности", admission.locality_type if admission else None),
         ],
     )

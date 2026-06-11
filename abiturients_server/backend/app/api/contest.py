@@ -15,7 +15,13 @@ from app.models import (
     Specialty,
     User,
 )
-from app.schemas.dto import ApplicationRead, ContestApplicationUpdate, ContestEntryRead
+from app.schemas.dto import (
+    ApplicationRead,
+    BulkContestChoicesRequest,
+    BulkContestUpdateRequest,
+    ContestApplicationUpdate,
+    ContestEntryRead,
+)
 from app.services.serializers import serialize_application
 from app.services.workflow import (
     ensure_folder_path,
@@ -105,6 +111,84 @@ def apply_contest_update(
     db.flush()
 
 
+def get_active_choices(db: Session, choice_ids: list[int]) -> list[ContestChoice]:
+    unique_ids = list(dict.fromkeys(choice_ids))
+    choices = (
+        db.query(ContestChoice)
+        .options(
+            joinedload(ContestChoice.specialty),
+            joinedload(ContestChoice.application).joinedload(Application.contest_profile),
+            joinedload(ContestChoice.application).joinedload(Application.contest_choices),
+        )
+        .filter(ContestChoice.id.in_(unique_ids), ContestChoice.status == "active")
+        .all()
+    )
+    if len(choices) != len(unique_ids):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Одна из конкурсных заявок не найдена")
+    if any(choice.application.status != ApplicationStatus.in_contest.value for choice in choices):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Одна из заявок уже не участвует в конкурсе")
+    return choices
+
+
+def accept_choice(db: Session, choice: ContestChoice, user: User) -> Application:
+    app = choice.application
+    profile = app.contest_profile
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Конкурсные данные не заполнены")
+    admission = get_or_create_admission_details(db, app)
+    for field in (
+        "benefit_group",
+        "residence_address",
+        "base_class",
+        "enrollment_type",
+        "locality_type",
+        "instruction_language",
+        "study_form",
+        "needs_dormitory",
+    ):
+        setattr(admission, field, getattr(profile, field))
+    admission.specialty = choice.specialty.name
+    admission.qualification = choice.specialty.qualification
+
+    for other_choice in list(app.contest_choices):
+        if other_choice.id == choice.id:
+            other_choice.status = "accepted"
+        else:
+            db.delete(other_choice)
+    profile.accepted_specialty_id = choice.specialty_id
+    profile.completed_at = datetime.now(UTC)
+    app.status = ApplicationStatus.accepted_by_admissions.value
+    get_or_create_education_details(db, app)
+    folder = ensure_folder_path(db, ["Учебная часть", "Требуют оформления"], Role.education_admin.value, user.id)
+    move_application_to_folder(db, app.id, folder)
+    notify_roles(
+        db,
+        [Role.education_admin, Role.tech_admin],
+        "Заявка принята по конкурсу",
+        f"{app.full_name}: {choice.specialty.name}.",
+        "contest_accepted",
+        app.id,
+    )
+    return app
+
+
+def reject_choice(db: Session, choice: ContestChoice, user: User) -> Application:
+    app = choice.application
+    db.delete(choice)
+    db.flush()
+    remaining = db.scalar(
+        select(ContestChoice.id).where(
+            ContestChoice.application_id == app.id,
+            ContestChoice.status == "active",
+        ).limit(1)
+    )
+    if remaining is None:
+        app.status = ApplicationStatus.new.value
+        folder = ensure_folder_path(db, ["Приемная комиссия", "Новые заявки"], Role.admissions_admin.value, user.id)
+        move_application_to_folder(db, app.id, folder)
+    return app
+
+
 @router.get("/entries", response_model=list[ContestEntryRead])
 def contest_entries(
     user: User = Depends(get_current_user),
@@ -138,7 +222,7 @@ def contest_entries(
             application_id=choice.application_id,
             full_name=choice.application.full_name,
             iin=choice.application.iin,
-            base_class=choice.application.contest_profile.base_class or "Не указана",
+            base_class=choice.application.contest_profile.base_class or "Не выбрано",
             qualification=choice.specialty.qualification,
             specialty=choice.specialty.name,
             created_at=choice.created_at,
@@ -180,7 +264,6 @@ def submit_to_contest(
     if app.status not in {
         ApplicationStatus.new.value,
         ApplicationStatus.in_admissions_review.value,
-        ApplicationStatus.in_contest.value,
     }:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Заявку уже нельзя отправить на конкурс")
     apply_contest_update(db, app, payload)
@@ -196,6 +279,8 @@ def submit_to_contest(
         missing.append("base_class")
     if not profile.residence_address:
         missing.append("residence_address")
+    if not profile.instruction_language:
+        missing.append("instruction_language")
     if not active_choices:
         missing.append("specialty_ids")
     if missing:
@@ -231,44 +316,7 @@ def accept_contest_choice(
     if not choice or choice.application.status != ApplicationStatus.in_contest.value:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Конкурсная заявка не найдена")
 
-    app = choice.application
-    profile = app.contest_profile
-    if not profile:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Конкурсные данные не заполнены")
-    admission = get_or_create_admission_details(db, app)
-    for field in (
-        "benefit_group",
-        "residence_address",
-        "base_class",
-        "enrollment_type",
-        "locality_type",
-        "instruction_language",
-        "study_form",
-        "needs_dormitory",
-    ):
-        setattr(admission, field, getattr(profile, field))
-    admission.specialty = choice.specialty.name
-    admission.qualification = choice.specialty.qualification
-
-    for other_choice in list(app.contest_choices):
-        if other_choice.id == choice.id:
-            other_choice.status = "accepted"
-        else:
-            db.delete(other_choice)
-    profile.accepted_specialty_id = choice.specialty_id
-    profile.completed_at = datetime.now(UTC)
-    app.status = ApplicationStatus.accepted_by_admissions.value
-    get_or_create_education_details(db, app)
-    folder = ensure_folder_path(db, ["Учебная часть", "Требуют оформления"], Role.education_admin.value, user.id)
-    move_application_to_folder(db, app.id, folder)
-    notify_roles(
-        db,
-        [Role.education_admin, Role.tech_admin],
-        "Заявка принята по конкурсу",
-        f"{app.full_name}: {choice.specialty.name}.",
-        "contest_accepted",
-        app.id,
-    )
+    app = accept_choice(db, choice, user)
     db.commit()
     db.expire_all()
     return serialize_application(get_contest_application(db, app.id, user))
@@ -288,17 +336,61 @@ def reject_contest_choice(
     if not app or app.status != ApplicationStatus.in_contest.value:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Заявка уже не участвует в конкурсе")
     application_id = choice.application_id
-    db.delete(choice)
-    db.flush()
-    remaining = db.scalar(
-        select(ContestChoice.id).where(
-            ContestChoice.application_id == application_id,
-            ContestChoice.status == "active",
-        ).limit(1)
-    )
-    if remaining is None:
-        app.status = ApplicationStatus.new.value
-        folder = ensure_folder_path(db, ["Приемная комиссия", "Новые заявки"], Role.admissions_admin.value, user.id)
-        move_application_to_folder(db, app.id, folder)
+    reject_choice(db, choice, user)
     db.commit()
     return {"application_id": application_id, "status": app.status}
+
+
+@router.patch("/bulk/update", response_model=list[ApplicationRead])
+def bulk_update_contest(
+    payload: BulkContestUpdateRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[ApplicationRead]:
+    ensure_role(user, CONTEST_EDIT_ROLES)
+    if payload.update.specialty_ids is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Специальности нельзя массово заменять",
+        )
+    choices = get_active_choices(db, payload.choice_ids)
+    applications = list({choice.application.id: choice.application for choice in choices}.values())
+    for app in applications:
+        apply_contest_update(db, app, payload.update)
+    db.commit()
+    db.expire_all()
+    return [serialize_application(get_contest_application(db, app.id, user)) for app in applications]
+
+
+@router.post("/bulk/accept", response_model=list[ApplicationRead])
+def bulk_accept_contest(
+    payload: BulkContestChoicesRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> list[ApplicationRead]:
+    ensure_role(user, CONTEST_DECISION_ROLES)
+    choices = get_active_choices(db, payload.choice_ids)
+    application_ids = [choice.application_id for choice in choices]
+    if len(set(application_ids)) != len(application_ids):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Для одного абитуриента можно принять только одну специальность",
+        )
+    applications = [accept_choice(db, choice, user) for choice in choices]
+    db.commit()
+    db.expire_all()
+    return [serialize_application(get_contest_application(db, app.id, user)) for app in applications]
+
+
+@router.post("/bulk/reject", response_model=dict)
+def bulk_reject_contest(
+    payload: BulkContestChoicesRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, int]:
+    ensure_role(user, CONTEST_DECISION_ROLES)
+    choices = get_active_choices(db, payload.choice_ids)
+    for choice in choices:
+        reject_choice(db, choice, user)
+    db.commit()
+    return {"rejected": len(choices)}

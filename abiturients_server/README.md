@@ -243,6 +243,8 @@ admin12345
 - `PATCH /contest/applications/{id}` — сохранить конкурсные данные
 - `POST /contest/applications/{id}/submit` — отправить заявку на конкурс
 - `POST /contest/choices/{id}/accept|reject`
+- `PATCH /contest/bulk/update`
+- `POST /contest/bulk/accept|reject`
 - `POST /applicant/access` — восстановить доступ по ИИН и телефону
 - `POST /applications/{id}/chat/attachments`
 - `POST /admin/chats/{id}/attachments`
@@ -254,3 +256,5 @@ admin12345
 Полная интерактивная документация доступна на `/docs`.
 
 Вложения чата ограничены 10 МБ. Поддерживаются PDF, изображения, Word и Excel; содержимое хранится в базе данных и локальном каталоге `UPLOAD_DIR`.
+
+База поступления выбирается из фиксированного списка: `9 класс`, `11 класс`, `ТИПО`. В конкурсном реестре карточки можно выделять кликом, `Ctrl`+кликом или рамкой для массового изменения, принятия и отклонения.

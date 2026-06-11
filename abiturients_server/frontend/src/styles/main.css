@@ -556,6 +556,29 @@ textarea:focus {
   box-shadow: 0 0 0 4px rgba(47, 157, 226, 0.12);
 }
 
+input.empty-field,
+select.empty-field,
+textarea.empty-field {
+  color: var(--muted);
+  background: #fff7f7;
+  border-color: #e45c68;
+  box-shadow: 0 0 0 2px rgba(228, 92, 104, 0.08);
+}
+
+input.empty-field::placeholder,
+textarea.empty-field::placeholder {
+  color: #9aa5b1;
+  opacity: 1;
+}
+
+dd.empty-field {
+  color: #8b98a5;
+  background: #fff7f7;
+  border: 1px solid #e45c68;
+  border-radius: 6px;
+  padding: 7px 9px;
+}
+
 .span-2 {
   grid-column: 1 / -1;
 }
@@ -1238,6 +1261,13 @@ td span {
 
 .contest-manager .file-card .secondary-button {
   margin-top: auto;
+}
+
+.contest-bulk-form {
+  width: min(760px, 100%);
+  max-height: 90vh;
+  overflow: auto;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
 .applicant-login {

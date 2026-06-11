@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -111,7 +112,7 @@ class ContestProfileRead(BaseModel):
 class ContestApplicationUpdate(BaseModel):
     benefit_group: str | None = None
     residence_address: str | None = None
-    base_class: str | None = Field(default=None, max_length=64)
+    base_class: Literal["9 класс", "11 класс", "ТИПО"] | None = None
     enrollment_type: EnrollmentType | None = None
     locality_type: LocalityType | None = None
     instruction_language: InstructionLanguage | None = None
@@ -124,6 +125,14 @@ class ContestApplicationUpdate(BaseModel):
         if self.specialty_ids is not None and len(set(self.specialty_ids)) != len(self.specialty_ids):
             raise ValueError("Специальности не должны повторяться")
         return self
+
+
+class BulkContestChoicesRequest(BaseModel):
+    choice_ids: list[int] = Field(min_length=1)
+
+
+class BulkContestUpdateRequest(BulkContestChoicesRequest):
+    update: ContestApplicationUpdate
 
 
 class ContestEntryRead(BaseModel):
@@ -156,7 +165,7 @@ class AdmissionDetailsRead(BaseModel):
 class AdmissionDetailsUpdate(BaseModel):
     benefit_group: str | None = None
     residence_address: str | None = None
-    base_class: str | None = None
+    base_class: Literal["9 класс", "11 класс", "ТИПО"] | None = None
     qualification: str | None = None
     specialty: str | None = None
     enrollment_type: EnrollmentType | None = None
