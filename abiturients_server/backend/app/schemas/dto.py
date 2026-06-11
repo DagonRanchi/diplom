@@ -183,6 +183,10 @@ class EducationDetailsRead(BaseModel):
     curator_id: int | None = None
     group_number: str | None = None
     course: int | None = None
+    nobd_specialty_code: str | None = None
+    study_duration_years: int | None = None
+    course_start_date: date | None = None
+    course_end_date: date | None = None
     payment_type: str | None = None
     is_state_grant: bool
     has_scholarship: bool
@@ -207,6 +211,17 @@ class EducationDetailsUpdate(BaseModel):
     scholarship_amount: int | None = Field(default=None, ge=0, le=1_000_000)
     academic_leave: bool | None = None
     academic_performance: AcademicPerformance | None = None
+
+
+class AcademicYearTransitionRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    start_year: int
+    promoted_count: int
+    graduated_count: int
+    skipped_count: int
+    created_at: datetime
 
 
 class ExpelRequest(BaseModel):

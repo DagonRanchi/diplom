@@ -30,6 +30,10 @@ export type EducationDetails = {
   curator_id?: number | null;
   group_number?: string | null;
   course?: number | null;
+  nobd_specialty_code?: string | null;
+  study_duration_years?: number | null;
+  course_start_date?: string | null;
+  course_end_date?: string | null;
   payment_type?: "free" | "paid" | null;
   is_state_grant: boolean;
   has_scholarship: boolean;
@@ -42,6 +46,15 @@ export type EducationDetails = {
   expulsion_reason?: string | null;
   expelled_at?: string | null;
   graduated_at?: string | null;
+};
+
+export type AcademicYearTransition = {
+  id: number;
+  start_year: number;
+  promoted_count: number;
+  graduated_count: number;
+  skipped_count: number;
+  created_at: string;
 };
 
 export type ContestChoice = {

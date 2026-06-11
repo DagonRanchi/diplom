@@ -18,6 +18,7 @@ from app.models import (
     User,
 )
 from app.services.workflow import ensure_folder_path, move_application_to_folder
+from app.services.study_programs import sync_study_schedule
 
 DEFAULT_PASSWORD = "admin12345"
 SPECIALTY_ITEMS = [
@@ -26,6 +27,8 @@ SPECIALTY_ITEMS = [
     ("4S04140103 Маркетолог", "04140100 Маркетинг"),
     ("4S06130103 Разработчик программного обеспечения", "06130100 Программное обеспечение"),
     ("4S06130105 Техник информационных систем", "06130100 Программное обеспечение"),
+    ("3W07161301 Слесарь по ремонту автомобилей", "07161300 Техническое обслуживание, ремонт и эксплуатация автомобильного транспорта"),
+    ("3W07161302 Электрик по ремонту автомобильного электрооборудования", "07161300 Техническое обслуживание, ремонт и эксплуатация автомобильного транспорта"),
     ("4S07161304 Техник-механик", "07161300 Техническое обслуживание, ремонт и эксплуатация автомобильного транспорта"),
     ("3W07161303 Мастер по ремонту автомобильного транспорта", "07161300 Техническое обслуживание, ремонт и эксплуатация автомобильного транспорта"),
     ("4S04120103 Менеджер по банковским операциям", "04120100 Банковское и страховое дело"),
@@ -138,18 +141,18 @@ def seed_applications(db: Session, users: dict[str, User]) -> None:
     )
     app3.admission_details.specialty = "4S04110102 Бухгалтер"
     app3.admission_details.qualification = "04110100 Учет и аудит"
+    app3.admission_details.base_class = "9 класс"
     if not app3.education_details:
-        db.add(
-            EducationDetails(
-                application_id=app3.id,
-                curator_id=users["teacher"].id,
-                group_number="ИС-1-24",
-                course=1,
-                payment_type=PaymentType.free.value,
-                is_state_grant=True,
-            )
+        app3.education_details = EducationDetails(
+            curator_id=users["teacher"].id,
+            group_number="ИС-1-24",
+            course=1,
+            payment_type=PaymentType.free.value,
+            is_state_grant=True,
         )
+        db.add(app3.education_details)
         db.flush()
+    sync_study_schedule(app3, app3.education_details)
     move_application_to_folder(db, app3.id, ensure_folder_path(db, ["Группы", "ИС-1-24"]))
 
     chat = app1.chat
@@ -164,6 +167,9 @@ def run_seed() -> None:
         seed_specialties(db)
         seed_folders(db, users["tech"])
         seed_applications(db, users)
+        for app in db.scalars(select(Application)).all():
+            if app.education_details and app.education_details.course:
+                sync_study_schedule(app, app.education_details)
         db.commit()
         print("Seed data is ready.")
     finally:

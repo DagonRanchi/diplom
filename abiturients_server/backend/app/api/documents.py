@@ -219,6 +219,25 @@ def download_application_pdf(
         [
             ("Группа", education.group_number if education else None),
             ("Курс", education.course if education else None),
+            ("Код специальности НОБД", education.nobd_specialty_code if education else None),
+            (
+                "Срок обучения",
+                f"{education.study_duration_years} г."
+                if education and education.study_duration_years is not None
+                else None,
+            ),
+            (
+                "Начало текущего курса",
+                education.course_start_date.strftime("%d.%m.%Y")
+                if education and education.course_start_date
+                else None,
+            ),
+            (
+                "Окончание текущего курса",
+                education.course_end_date.strftime("%d.%m.%Y")
+                if education and education.course_end_date
+                else None,
+            ),
             ("Куратор", curator_name),
             ("Тип оплаты", education.payment_type if education else None),
             ("Госзаказ", education.is_state_grant if education else None),

@@ -20,6 +20,7 @@ from app.schemas.dto import (
     validate_iin_birth_date,
 )
 from app.services.serializers import serialize_application
+from app.services.study_programs import sync_study_schedule
 from app.services.workflow import (
     apply_application_filters,
     ADMISSIONS_ACTIONABLE_STATUSES,
@@ -90,6 +91,12 @@ def apply_application_update(app: Application, payload: ApplicationAdminUpdate, 
                 app,
                 app.education_details.academic_performance,
             )
+        if (
+            {"specialty", "base_class"} & set(details_data)
+            and app.education_details
+            and app.education_details.course
+        ):
+            sync_study_schedule(app, app.education_details)
 
 
 @router.get("", response_model=list[ApplicationRead])

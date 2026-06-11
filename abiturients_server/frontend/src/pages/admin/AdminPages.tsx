@@ -24,6 +24,7 @@ import {
   API_URL,
   apiFetch,
   apiMessage,
+  AcademicYearTransition,
   Application,
   Chat,
   ChatMessage,
@@ -1859,6 +1860,10 @@ export function ApplicationDetailsPage() {
               <div><dt>Форма обучения</dt><dd>{app.admission_details?.study_form === "part_time" ? "Заочная" : "Очная"}</dd></div>
               <div><dt>Общежитие</dt><dd>{app.admission_details?.needs_dormitory ? "Нужно" : "Не нужно"}</dd></div>
               <div><dt>Курс</dt><dd className={emptyFieldClass(app.education_details?.course)}>{app.education_details?.course ?? "Не выбрано"}</dd></div>
+              <div><dt>Код НОБД</dt><dd className={emptyFieldClass(app.education_details?.nobd_specialty_code)}>{app.education_details?.nobd_specialty_code ?? "Не выбрано"}</dd></div>
+              <div><dt>Срок обучения</dt><dd className={emptyFieldClass(app.education_details?.study_duration_years)}>{app.education_details?.study_duration_years ? `${app.education_details.study_duration_years} г.` : "Не выбрано"}</dd></div>
+              <div><dt>Начало курса</dt><dd className={emptyFieldClass(app.education_details?.course_start_date)}>{app.education_details?.course_start_date ? formatDate(app.education_details.course_start_date) : "Не выбрано"}</dd></div>
+              <div><dt>Окончание курса</dt><dd className={emptyFieldClass(app.education_details?.course_end_date)}>{app.education_details?.course_end_date ? formatDate(app.education_details.course_end_date) : "Не выбрано"}</dd></div>
               <div><dt>Группа</dt><dd className={emptyFieldClass(app.education_details?.group_number)}>{app.education_details?.group_number ?? "Не выбрано"}</dd></div>
               <div><dt>Куратор</dt><dd className={emptyFieldClass(app.education_details?.curator_id)}>{curatorName}</dd></div>
               <div><dt>Квалификация</dt><dd className={emptyFieldClass(app.admission_details?.qualification)}>{app.admission_details?.qualification ?? "Не выбрано"}</dd></div>
@@ -2083,6 +2088,48 @@ export function UsersPage() {
 }
 
 export function SettingsPage() {
+  const { token, user } = useAuth();
+  const [latestTransition, setLatestTransition] = useState<AcademicYearTransition | null>(null);
+  const [startingCourse, setStartingCourse] = useState(false);
+  const [success, setSuccess] = useState("");
+  const [error, setError] = useState("");
+  const currentYear = new Date().getFullYear();
+
+  useEffect(() => {
+    if (!token || user?.role !== "tech_admin") return;
+    apiFetch<AcademicYearTransition | null>("/education/academic-year/latest", { token })
+      .then(setLatestTransition)
+      .catch((requestError) => setError(apiMessage(requestError)));
+  }, [token, user?.role]);
+
+  const startNewCourse = async () => {
+    if (!token) return;
+    const confirmed = window.confirm(
+      `Начать ${currentYear}/${currentYear + 1} учебный год? Курсы активных студентов будут увеличены, а завершившие обучение станут выпускниками.`
+    );
+    if (!confirmed) return;
+
+    setStartingCourse(true);
+    setSuccess("");
+    setError("");
+    try {
+      const transition = await apiFetch<AcademicYearTransition>("/education/academic-year/start", {
+        method: "POST",
+        token,
+      });
+      setLatestTransition(transition);
+      setSuccess(
+        `Новый курс запущен: переведено ${transition.promoted_count}, выпущено ${transition.graduated_count}, пропущено ${transition.skipped_count}.`
+      );
+    } catch (requestError) {
+      setError(apiMessage(requestError));
+    } finally {
+      setStartingCourse(false);
+    }
+  };
+
+  const currentYearStarted = latestTransition?.start_year === currentYear;
+
   return (
     <section className="admin-page">
       <div className="page-heading">
@@ -2091,7 +2138,33 @@ export function SettingsPage() {
           <h2>Системная информация</h2>
         </div>
       </div>
+      {success && <div className="form-success">{success}</div>}
+      {error && <div className="form-error">{error}</div>}
       <div className="settings-grid">
+        {user?.role === "tech_admin" && (
+          <article className="academic-year-card">
+            <h3>Учебный год {currentYear}/{currentYear + 1}</h3>
+            <p>
+              Повышает курс у оформленных и зачисленных студентов. Студенты последнего курса
+              автоматически переходят в статус «Выпускник».
+            </p>
+            {latestTransition && (
+              <small>
+                Последний запуск: {latestTransition.start_year}/{latestTransition.start_year + 1},
+                переведено {latestTransition.promoted_count}, выпущено {latestTransition.graduated_count}.
+              </small>
+            )}
+            <button
+              type="button"
+              className="primary-button"
+              onClick={startNewCourse}
+              disabled={startingCourse || currentYearStarted}
+            >
+              <RefreshCw size={16} />
+              {currentYearStarted ? "Новый курс уже запущен" : startingCourse ? "Запуск..." : "Начать новый курс"}
+            </button>
+          </article>
+        )}
         <article>
           <h3>Backend</h3>
           <p>FastAPI, PostgreSQL, SQLAlchemy, Alembic, JWT.</p>

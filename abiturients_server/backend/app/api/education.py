@@ -1,12 +1,16 @@
 from datetime import UTC, datetime
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import joinedload
 from sqlalchemy.orm import Session
 
 from app.core.rbac import get_current_user
 from app.db.session import get_db
-from app.models import Application, ApplicationStatus, Role, User
+from app.models import AcademicYearTransition, Application, ApplicationStatus, EducationDetails, Role, User
 from app.schemas.dto import (
+    AcademicYearTransitionRead,
     ApplicationRead,
     BulkEducationDetailsUpdateRequest,
     BulkIdsRequest,
@@ -15,6 +19,7 @@ from app.schemas.dto import (
     ExpelRequest,
 )
 from app.services.serializers import serialize_application
+from app.services.study_programs import study_duration_years, sync_study_schedule
 from app.services.workflow import (
     calculate_scholarship_amount,
     EDUCATION_COMPLETABLE_STATUSES,
@@ -57,6 +62,8 @@ def apply_education_details_update(
         not had_scholarship or "academic_performance" in data
     ):
         details.scholarship_amount = calculate_scholarship_amount(app, details.academic_performance)
+    if details.course:
+        sync_study_schedule(app, details)
     if app.status == ApplicationStatus.accepted_by_admissions.value:
         app.status = ApplicationStatus.education_review.value
     return details
@@ -83,6 +90,7 @@ def complete_education_application(app: Application, user: User, db: Session) ->
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail={"missing_fields": missing})
 
     details.completed_at = datetime.now(UTC)
+    sync_study_schedule(app, details)
     app.status = ApplicationStatus.completed.value
     group_folder = ensure_folder_path(db, ["Группы", details.group_number], Role.education_admin.value, user.id)
     move_application_to_folder(db, app.id, group_folder)
@@ -96,6 +104,92 @@ def complete_education_application(app: Application, user: User, db: Session) ->
             app.id,
         )
     return app
+
+
+def start_new_academic_year(
+    db: Session,
+    user: User,
+    start_year: int | None = None,
+) -> AcademicYearTransition:
+    if user.role != Role.tech_admin.value:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+
+    target_year = start_year or datetime.now(UTC).year
+    existing = db.scalar(
+        select(AcademicYearTransition).where(AcademicYearTransition.start_year == target_year)
+    )
+    if existing:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Новый курс на {target_year}/{target_year + 1} учебный год уже запущен",
+        )
+
+    applications = (
+        db.query(Application)
+        .join(EducationDetails)
+        .options(
+            joinedload(Application.admission_details),
+            joinedload(Application.education_details),
+        )
+        .filter(
+            Application.status.in_(
+                {
+                    ApplicationStatus.completed.value,
+                    ApplicationStatus.enrolled.value,
+                }
+            )
+        )
+        .all()
+    )
+    promoted_count = 0
+    graduated_count = 0
+    skipped_count = 0
+    graduates_folder = None
+
+    for app in applications:
+        details = app.education_details
+        if not details or not details.course:
+            skipped_count += 1
+            continue
+
+        sync_study_schedule(app, details)
+        if details.course_start_date and details.course_start_date.year >= target_year:
+            skipped_count += 1
+            continue
+
+        admission = app.admission_details
+        duration_years = study_duration_years(
+            admission.specialty if admission else None,
+            admission.base_class if admission else None,
+        )
+        if duration_years is not None and details.course >= duration_years:
+            details.graduated_at = datetime.now(UTC)
+            app.status = ApplicationStatus.graduated.value
+            if graduates_folder is None:
+                graduates_folder = ensure_folder_path(
+                    db,
+                    ["Учебная часть", "Выпускники"],
+                    Role.education_admin.value,
+                    user.id,
+                )
+            move_application_to_folder(db, app.id, graduates_folder)
+            graduated_count += 1
+            continue
+
+        details.course += 1
+        sync_study_schedule(app, details, academic_start_year=target_year)
+        promoted_count += 1
+
+    transition = AcademicYearTransition(
+        start_year=target_year,
+        run_by_user_id=user.id,
+        promoted_count=promoted_count,
+        graduated_count=graduated_count,
+        skipped_count=skipped_count,
+    )
+    db.add(transition)
+    db.flush()
+    return transition
 
 
 def expel_education_application(app: Application, payload: ExpelRequest, user: User, db: Session) -> Application:
@@ -223,3 +317,34 @@ def graduate_application(
     db.commit()
     db.refresh(app)
     return serialize_application(app)
+
+
+@router.get("/academic-year/latest", response_model=AcademicYearTransitionRead | None)
+def latest_academic_year_transition(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AcademicYearTransition | None:
+    if user.role != Role.tech_admin.value:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+    return db.scalar(
+        select(AcademicYearTransition).order_by(AcademicYearTransition.start_year.desc()).limit(1)
+    )
+
+
+@router.post("/academic-year/start", response_model=AcademicYearTransitionRead)
+def start_academic_year(
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> AcademicYearTransition:
+    try:
+        transition = start_new_academic_year(db, user)
+        db.commit()
+        db.refresh(transition)
+        return transition
+    except IntegrityError:
+        db.rollback()
+        current_year = datetime.now(UTC).year
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Новый курс на {current_year}/{current_year + 1} учебный год уже запущен",
+        )

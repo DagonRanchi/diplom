@@ -154,6 +154,10 @@ class EducationDetails(Base):
     curator_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), index=True)
     group_number: Mapped[str | None] = mapped_column(String(100), index=True)
     course: Mapped[int | None] = mapped_column(Integer)
+    nobd_specialty_code: Mapped[str | None] = mapped_column(String(32))
+    study_duration_years: Mapped[int | None] = mapped_column(Integer)
+    course_start_date: Mapped[date | None] = mapped_column(Date)
+    course_end_date: Mapped[date | None] = mapped_column(Date)
     payment_type: Mapped[str | None] = mapped_column(String(32))
     is_state_grant: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     has_scholarship: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
@@ -169,6 +173,20 @@ class EducationDetails(Base):
 
     application: Mapped[Application] = relationship(back_populates="education_details")
     curator: Mapped[User | None] = relationship(back_populates="curated_students")
+
+
+class AcademicYearTransition(Base):
+    __tablename__ = "academic_year_transitions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    start_year: Mapped[int] = mapped_column(Integer, nullable=False, unique=True, index=True)
+    run_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    promoted_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    graduated_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    run_by: Mapped[User | None] = relationship()
 
 
 class Rejection(Base):

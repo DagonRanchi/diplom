@@ -1,5 +1,6 @@
 from app.models.entities import (
     AcademicPerformance,
+    AcademicYearTransition,
     AdmissionDetails,
     Application,
     ApplicationStatus,
@@ -26,6 +27,7 @@ from app.models.entities import (
 
 __all__ = [
     "AcademicPerformance",
+    "AcademicYearTransition",
     "AdmissionDetails",
     "Application",
     "ApplicationStatus",
