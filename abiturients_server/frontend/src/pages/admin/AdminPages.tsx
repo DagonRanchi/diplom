@@ -289,18 +289,24 @@ export function ApplicationsPage() {
 }
 
 export function FileManagerPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const navigate = useNavigate();
   const [tree, setTree] = useState<FolderNode[]>([]);
   const [folderId, setFolderId] = useState<number | null>(null);
   const [apps, setApps] = useState<Application[]>([]);
   const [selected, setSelected] = useState<number[]>([]);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+  const [deletingStudents, setDeletingStudents] = useState(false);
   const [draggingIds, setDraggingIds] = useState<number[]>([]);
   const [dropTargetId, setDropTargetId] = useState<number | null>(null);
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; x: number; y: number } | null>(null);
   const gridRef = useRef<HTMLDivElement | null>(null);
 
   const folders = useMemo(() => flattenFolders(tree), [tree]);
+  const currentFolder = folders.find((item) => item.id === folderId) ?? null;
+  const childFolders = folderId === null ? tree : currentFolder?.children ?? [];
+  const folderPath = folderId === null ? [] : findFolderPath(tree, folderId);
 
   const loadTree = async () => {
     if (!token) return;
@@ -344,6 +350,30 @@ export function FileManagerPage() {
     await apiFetch(`/folders/${folderId}`, { method: "DELETE", token });
     setFolderId(null);
     await loadTree();
+  };
+
+  const deleteAllStudents = async () => {
+    if (!token || !folderId || !currentFolder?.item_count) return;
+    const confirmed = window.confirm(
+      `Удалить всех студентов из папки «${currentFolder.name}» (${currentFolder.item_count})?\n\nЭто действие нельзя отменить.`
+    );
+    if (!confirmed) return;
+
+    setError("");
+    setSuccess("");
+    setDeletingStudents(true);
+    try {
+      const result = await apiFetch<{ deleted: number }>(`/folders/${folderId}/students`, {
+        method: "DELETE",
+        token,
+      });
+      setSuccess(`Удалено студентов: ${result.deleted}`);
+      await Promise.all([loadApps(), loadTree()]);
+    } catch (err) {
+      setError(apiMessage(err));
+    } finally {
+      setDeletingStudents(false);
+    }
   };
 
   const moveApplications = async (applicationIds: number[], targetFolderId: number) => {
@@ -438,9 +468,6 @@ export function FileManagerPage() {
         height: Math.abs(selectionBox.y - selectionBox.startY),
       }
     : undefined;
-  const currentFolder = folders.find((item) => item.id === folderId) ?? null;
-  const childFolders = folderId === null ? tree : currentFolder?.children ?? [];
-  const folderPath = folderId === null ? [] : findFolderPath(tree, folderId);
 
   const dropApplicationsOnFolder = (event: ReactDragEvent<HTMLElement>, targetFolderId: number) => {
     event.preventDefault();
@@ -511,8 +538,15 @@ export function FileManagerPage() {
           <div className="toolbar compact">
             {folderId !== null && <button onClick={renameFolder}><Pencil size={16} /> Переименовать</button>}
             {folderId !== null && <button onClick={deleteFolder}><Trash2 size={16} /> Удалить</button>}
+            {user?.role === "tech_admin" && folderId !== null && Boolean(currentFolder?.item_count) && (
+              <button className="danger-button" onClick={deleteAllStudents} disabled={deletingStudents}>
+                <UserMinus size={16} /> {deletingStudents ? "Удаление..." : "Удалить всех студентов"}
+              </button>
+            )}
           </div>
         </div>
+        {error && <div className="form-error">{error}</div>}
+        {success && <div className="form-success">{success}</div>}
         <div className="bulk-panel">
           <span>Выбрано: {selected.length}</span>
           <span className="muted">Выделите рамкой или кликом, затем перетащите в папку слева.</span>

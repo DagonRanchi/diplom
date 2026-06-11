@@ -94,6 +94,18 @@ button {
   box-shadow: 0 1px 0 rgba(18, 59, 100, 0.04), 0 6px 16px rgba(18, 59, 100, 0.08);
 }
 
+.toolbar button.danger-button {
+  color: #9d1f2e;
+  background: #fff0f1;
+  border-color: #ffd0d5;
+}
+
+.toolbar button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+  transform: none;
+}
+
 .ghost-link {
   color: var(--blue-900);
   background: rgba(255, 255, 255, 0.7);

@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.rbac import get_current_user
 from app.db.session import get_db
-from app.models import Folder, FolderItem, Role, User
+from app.models import Application, Folder, FolderItem, Role, User
 from app.schemas.dto import BulkMoveRequest, FolderCreate, FolderItemCreate, FolderRead, FolderTreeNode, FolderUpdate
 from app.services.workflow import get_visible_application_or_404, move_application_to_folder
 
@@ -14,6 +14,11 @@ router = APIRouter(prefix="/folders", tags=["Folders"])
 def ensure_folder_operator(user: User) -> None:
     if user.role not in {Role.tech_admin.value, Role.admissions_admin.value, Role.education_admin.value}:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not enough permissions")
+
+
+def ensure_tech_admin(user: User) -> None:
+    if user.role != Role.tech_admin.value:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only technical administrator can delete students")
 
 
 def node_from_folder(folder: Folder) -> FolderTreeNode:
@@ -91,6 +96,27 @@ def delete_folder(folder_id: int, user: User = Depends(get_current_user), db: Se
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Folder must be empty")
     db.delete(folder)
     db.commit()
+
+
+@router.delete("/{folder_id}/students", response_model=dict)
+def delete_folder_students(
+    folder_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> dict[str, int]:
+    ensure_tech_admin(user)
+    folder = db.get(Folder, folder_id)
+    if not folder:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
+
+    application_ids = select(FolderItem.application_id).where(FolderItem.folder_id == folder_id)
+    result = db.execute(
+        delete(Application)
+        .where(Application.id.in_(application_ids))
+        .execution_options(synchronize_session=False)
+    )
+    db.commit()
+    return {"deleted": result.rowcount or 0}
 
 
 @router.post("/{folder_id}/items", response_model=FolderRead)

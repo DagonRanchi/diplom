@@ -233,6 +233,7 @@ admin12345
 - `POST /education/applications/bulk/save`
 - `GET /folders/tree`
 - `POST /folders/move-items`
+- `DELETE /folders/{id}/students` — удалить все анкеты из папки (только технический администратор)
 - `GET|POST /admin/chats/{id}/messages`
 - `GET|POST /users`
 - `GET /notifications`
