@@ -193,6 +193,14 @@ admin12345
 7. После сохранения полностью оформленный студент переходит в папку своей группы.
 8. Преподаватель-куратор видит только своих студентов.
 
+## Контингент и группы
+
+В разделе `/admin/settings` учебная часть и технический администратор сначала создают папки групп.
+В анкете студента группа выбирается только из этого списка. Техническому администратору там же
+доступен одноразовый импорт CSV/TSV контингента в кодировке UTF-16 или UTF-8, а учебной части и
+техническому администратору — выгрузка в формате исходного файла. Импорт сохраняет исходные
+столбцы для последующей выгрузки и нормализует регистр ФИО, включая записи без отчества.
+
 ## Деплой на Render
 
 В репозитории есть `render.yaml`:
@@ -238,6 +246,10 @@ admin12345
 - `POST /education/applications/{id}/save`
 - `PATCH /education/applications/bulk/details`
 - `POST /education/applications/bulk/save`
+- `GET|POST /education/groups`
+- `GET /education/contingent/latest`
+- `POST /education/contingent/import`
+- `GET /education/contingent/export`
 - `GET /folders/tree`
 - `POST /folders/move-items`
 - `DELETE /folders/{id}/students` — удалить все анкеты из папки (только технический администратор)

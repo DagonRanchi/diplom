@@ -224,6 +224,21 @@ class AcademicYearTransitionRead(BaseModel):
     created_at: datetime
 
 
+class ContingentImportRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filename: str
+    created_count: int
+    updated_count: int
+    normalized_count: int
+    created_at: datetime
+
+
+class GroupCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
 class ExpelRequest(BaseModel):
     order_number: str = Field(min_length=1, max_length=100)
     order_date: date

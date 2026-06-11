@@ -20,6 +20,7 @@ from app.schemas.dto import (
     validate_iin_birth_date,
 )
 from app.services.serializers import serialize_application
+from app.services.names import normalize_full_name
 from app.services.study_programs import sync_study_schedule
 from app.services.workflow import (
     apply_application_filters,
@@ -79,7 +80,8 @@ def apply_application_update(app: Application, payload: ApplicationAdminUpdate, 
 
     for field in ("iin", "birth_date", "full_name", "email", "phone"):
         if field in data and data[field] is not None:
-            setattr(app, field, data[field].value if hasattr(data[field], "value") else data[field])
+            value = data[field].value if hasattr(data[field], "value") else data[field]
+            setattr(app, field, normalize_full_name(value) if field == "full_name" else value)
 
     if payload.admission_details is not None:
         details = get_or_create_admission_details(db, app)

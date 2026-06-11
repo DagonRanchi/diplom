@@ -23,6 +23,7 @@ from app.services.chat_files import (
     delete_storage_names,
     save_chat_upload,
 )
+from app.services.names import normalize_full_name
 from app.services.workflow import (
     add_chat_message,
     ensure_folder_path,
@@ -107,7 +108,7 @@ def create_application(payload: ApplicationCreate, db: Session = Depends(get_db)
     app = Application(
         iin=payload.iin,
         birth_date=payload.birth_date,
-        full_name=payload.full_name,
+        full_name=normalize_full_name(payload.full_name),
         email=payload.email,
         phone=payload.phone,
         status=ApplicationStatus.new.value,

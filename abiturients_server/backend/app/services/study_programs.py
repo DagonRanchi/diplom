@@ -86,10 +86,11 @@ def sync_study_schedule(
     specialty = admission.specialty if admission else None
     base_class = admission.base_class if admission else None
     program = find_study_program(specialty)
-    duration_years = study_duration_years(specialty, base_class)
+    duration_years = study_duration_years(specialty, base_class) or details.study_duration_years
     course = details.course or 1
 
-    details.nobd_specialty_code = program.nobd_code if program else None
+    if program:
+        details.nobd_specialty_code = program.nobd_code
     details.study_duration_years = duration_years
 
     if academic_start_year is None:

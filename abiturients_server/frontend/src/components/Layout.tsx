@@ -81,7 +81,11 @@ export function AdminShell() {
             return (
               <NavLink key={link.to} to={link.to} className={({ isActive }) => (isActive ? "active" : "")}>
                 <Icon size={18} />
-                <span>{link.label}</span>
+                <span>
+                  {link.to === "/admin/settings" && user.role === "tech_admin"
+                    ? "Настройки и курс"
+                    : link.label}
+                </span>
               </NavLink>
             );
           })}

@@ -28,8 +28,10 @@ import {
   Application,
   Chat,
   ChatMessage,
+  ContingentImport,
   ContestEntry,
   FolderNode,
+  GroupFolder,
   roleLabels,
   Specialty,
   statusLabels,
@@ -70,6 +72,250 @@ function scholarshipAmount(specialty: string | null | undefined, performance: st
   if (performance === "excellent") amount += 5_000;
   if (specialty?.trim().toUpperCase().startsWith("3W")) amount += 3_000;
   return amount;
+}
+
+function AcademicYearControl() {
+  const { token, user } = useAuth();
+  const [latestTransition, setLatestTransition] = useState<AcademicYearTransition | null>(null);
+  const [startingCourse, setStartingCourse] = useState(false);
+  const [success, setSuccess] = useState("");
+  const [error, setError] = useState("");
+  const currentYear = new Date().getFullYear();
+
+  useEffect(() => {
+    if (!token || user?.role !== "tech_admin") return;
+    apiFetch<AcademicYearTransition | null>("/education/academic-year/latest", { token })
+      .then(setLatestTransition)
+      .catch((requestError) => setError(apiMessage(requestError)));
+  }, [token, user?.role]);
+
+  if (user?.role !== "tech_admin") return null;
+
+  const startNewCourse = async () => {
+    if (!token) return;
+    const confirmed = window.confirm(
+      `Начать ${currentYear}/${currentYear + 1} учебный год? Курсы активных студентов будут увеличены, а завершившие обучение станут выпускниками.`
+    );
+    if (!confirmed) return;
+
+    setStartingCourse(true);
+    setSuccess("");
+    setError("");
+    try {
+      const transition = await apiFetch<AcademicYearTransition>("/education/academic-year/start", {
+        method: "POST",
+        token,
+      });
+      setLatestTransition(transition);
+      setSuccess(
+        `Новый курс запущен: переведено ${transition.promoted_count}, выпущено ${transition.graduated_count}, пропущено ${transition.skipped_count}.`
+      );
+    } catch (requestError) {
+      setError(apiMessage(requestError));
+    } finally {
+      setStartingCourse(false);
+    }
+  };
+
+  const currentYearStarted = latestTransition?.start_year === currentYear;
+
+  return (
+    <div className="academic-year-section" id="academic-year">
+      {success && <div className="form-success">{success}</div>}
+      {error && <div className="form-error">{error}</div>}
+      <article className="academic-year-card">
+        <div>
+          <p className="eyebrow">Управление студентами</p>
+          <h3>Новый учебный год {currentYear}/{currentYear + 1}</h3>
+        </div>
+        <p>
+          Повышает курс у оформленных и зачисленных студентов. Студенты последнего курса
+          автоматически переходят в статус «Выпускник».
+        </p>
+        {latestTransition && (
+          <small>
+            Последний запуск: {latestTransition.start_year}/{latestTransition.start_year + 1},
+            переведено {latestTransition.promoted_count}, выпущено {latestTransition.graduated_count}.
+          </small>
+        )}
+        <button
+          type="button"
+          className="primary-button"
+          onClick={startNewCourse}
+          disabled={startingCourse || currentYearStarted}
+        >
+          <RefreshCw size={16} />
+          {currentYearStarted ? "Новый курс уже запущен" : startingCourse ? "Запуск..." : "Начать новый курс"}
+        </button>
+      </article>
+    </div>
+  );
+}
+
+function GroupManagement() {
+  const { token, user } = useAuth();
+  const [groups, setGroups] = useState<GroupFolder[]>([]);
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const [creating, setCreating] = useState(false);
+
+  const loadGroups = async () => {
+    if (!token) return;
+    setGroups(await apiFetch<GroupFolder[]>("/education/groups", { token }));
+  };
+
+  useEffect(() => {
+    if (!token || !["tech_admin", "education_admin"].includes(user?.role ?? "")) return;
+    void loadGroups().catch((requestError) => setError(apiMessage(requestError)));
+  }, [token, user?.role]);
+
+  if (!["tech_admin", "education_admin"].includes(user?.role ?? "")) return null;
+
+  const createGroup = async (event: FormEvent) => {
+    event.preventDefault();
+    if (!token || !name.trim()) return;
+    setCreating(true);
+    setError("");
+    try {
+      await apiFetch<GroupFolder>("/education/groups", {
+        method: "POST",
+        token,
+        body: JSON.stringify({ name: name.trim() }),
+      });
+      setName("");
+      await loadGroups();
+    } catch (requestError) {
+      setError(apiMessage(requestError));
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <article className="management-card">
+      <div>
+        <p className="eyebrow">Учебная часть</p>
+        <h3>Группы студентов</h3>
+        <p>Сначала создайте группу. После этого она появится в списке выбора в анкете студента.</p>
+      </div>
+      {error && <div className="form-error">{error}</div>}
+      <form className="inline-management-form" onSubmit={createGroup}>
+        <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Например, 25ПО-11р" />
+        <button className="primary-button" disabled={creating || !name.trim()}>
+          <FolderPlus size={16} />
+          {creating ? "Создание..." : "Создать группу"}
+        </button>
+      </form>
+      <div className="management-tags">
+        {groups.length
+          ? groups.map((group) => <span key={group.id}>{group.name}</span>)
+          : <small>Группы пока не созданы.</small>}
+      </div>
+    </article>
+  );
+}
+
+function ContingentControl() {
+  const { token, user } = useAuth();
+  const [latest, setLatest] = useState<ContingentImport | null>(null);
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const canUse = ["tech_admin", "education_admin"].includes(user?.role ?? "");
+
+  useEffect(() => {
+    if (!token || !canUse) return;
+    apiFetch<ContingentImport | null>("/education/contingent/latest", { token })
+      .then(setLatest)
+      .catch((requestError) => setError(apiMessage(requestError)));
+  }, [token, canUse]);
+
+  if (!canUse) return null;
+
+  const importFile = async () => {
+    if (!token || !file) return;
+    const form = new FormData();
+    form.append("file", file);
+    setBusy(true);
+    setError("");
+    setMessage("");
+    try {
+      const result = await apiFetch<ContingentImport>("/education/contingent/import", {
+        method: "POST",
+        token,
+        body: form,
+      });
+      setLatest(result);
+      setFile(null);
+      setMessage(`Импорт завершён: создано ${result.created_count}, обновлено ${result.updated_count}.`);
+    } catch (requestError) {
+      setError(apiMessage(requestError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const exportFile = async () => {
+    if (!token) return;
+    setBusy(true);
+    setError("");
+    try {
+      const response = await fetch(`${API_URL}/education/contingent/export`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) {
+        const payload = await response.json().catch(() => null);
+        throw new Error(payload?.detail || "Не удалось сформировать выгрузку");
+      }
+      const blob = await response.blob();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "Контингент_выгрузка.csv";
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (requestError) {
+      setError(apiMessage(requestError));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <article className="management-card">
+      <div>
+        <p className="eyebrow">НОБД</p>
+        <h3>Контингент студентов</h3>
+        <p>Импорт нормализует ФИО, сохраняет исходные столбцы и создаёт папки групп до назначения студентов.</p>
+      </div>
+      {latest && (
+        <small>
+          Последний импорт: {latest.filename}, {formatDate(latest.created_at)}. Создано {latest.created_count},
+          обновлено {latest.updated_count}, нормализовано ФИО {latest.normalized_count}.
+        </small>
+      )}
+      {message && <div className="form-success">{message}</div>}
+      {error && <div className="form-error">{error}</div>}
+      <div className="contingent-actions">
+        {user?.role === "tech_admin" && (
+          <>
+            <input
+              type="file"
+              accept=".csv,.tsv,text/csv,text/tab-separated-values"
+              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+            />
+            <button type="button" className="primary-button" onClick={importFile} disabled={!file || busy}>
+              <Plus size={16} /> {busy ? "Обработка..." : "Импортировать"}
+            </button>
+          </>
+        )}
+        <button type="button" onClick={exportFile} disabled={busy}>
+          <Download size={16} /> Выгрузить CSV
+        </button>
+      </div>
+    </article>
+  );
 }
 
 export function LoginPage() {
@@ -137,6 +383,7 @@ export function DashboardPage() {
         </div>
         <Link to="/admin/file-manager" className="secondary-button">Открыть папки</Link>
       </div>
+      <AcademicYearControl />
       <div className="metric-grid">
         <article><strong>{apps.length}</strong><span>Заявок доступно</span></article>
         <article><strong>{apps.filter((app) => app.status === "new").length}</strong><span>Новых</span></article>
@@ -1102,6 +1349,7 @@ export function ApplicationDetailsPage() {
   const [app, setApp] = useState<Application | null>(null);
   const [teachers, setTeachers] = useState<User[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
+  const [groups, setGroups] = useState<GroupFolder[]>([]);
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
   const [activeTab, setActiveTab] = useState<DetailsTab>("main");
@@ -1133,6 +1381,8 @@ export function ApplicationDetailsPage() {
     setTeachers(users);
     const info = await apiFetch<{ specialties: Specialty[] }>("/public/college-info").catch(() => ({ specialties: [] }));
     setSpecialties(info.specialties);
+    const groupItems = await apiFetch<GroupFolder[]>("/education/groups", { token }).catch(() => []);
+    setGroups(groupItems);
   };
 
   useEffect(() => { void load(); }, [token, applicationId]);
@@ -1800,7 +2050,13 @@ export function ApplicationDetailsPage() {
                 {teachers.map((teacher) => <option key={teacher.id} value={teacher.id}>{teacher.full_name}</option>)}
               </select>
             </label>
-            <label><span>Номер группы</span><input className={emptyFieldClass(app.education_details?.group_number)} value={app.education_details?.group_number ?? ""} onChange={(e) => updateEducation("group_number", e.target.value)} placeholder="Не выбрано" /></label>
+            <label>
+              <span>Группа</span>
+              <select className={emptyFieldClass(app.education_details?.group_number)} value={app.education_details?.group_number ?? ""} onChange={(e) => updateEducation("group_number", e.target.value)}>
+                <option value="" disabled>Сначала создайте и выберите группу</option>
+                {groups.map((group) => <option key={group.id} value={group.name}>{group.name}</option>)}
+              </select>
+            </label>
             <label><span>Курс</span><input className={emptyFieldClass(app.education_details?.course)} type="number" min={1} max={4} value={app.education_details?.course ?? ""} onChange={(e) => updateEducation("course", e.target.value ? Number(e.target.value) : null)} placeholder="Не выбрано" /></label>
             <label>
               <span>Оплата</span>
@@ -2088,48 +2344,6 @@ export function UsersPage() {
 }
 
 export function SettingsPage() {
-  const { token, user } = useAuth();
-  const [latestTransition, setLatestTransition] = useState<AcademicYearTransition | null>(null);
-  const [startingCourse, setStartingCourse] = useState(false);
-  const [success, setSuccess] = useState("");
-  const [error, setError] = useState("");
-  const currentYear = new Date().getFullYear();
-
-  useEffect(() => {
-    if (!token || user?.role !== "tech_admin") return;
-    apiFetch<AcademicYearTransition | null>("/education/academic-year/latest", { token })
-      .then(setLatestTransition)
-      .catch((requestError) => setError(apiMessage(requestError)));
-  }, [token, user?.role]);
-
-  const startNewCourse = async () => {
-    if (!token) return;
-    const confirmed = window.confirm(
-      `Начать ${currentYear}/${currentYear + 1} учебный год? Курсы активных студентов будут увеличены, а завершившие обучение станут выпускниками.`
-    );
-    if (!confirmed) return;
-
-    setStartingCourse(true);
-    setSuccess("");
-    setError("");
-    try {
-      const transition = await apiFetch<AcademicYearTransition>("/education/academic-year/start", {
-        method: "POST",
-        token,
-      });
-      setLatestTransition(transition);
-      setSuccess(
-        `Новый курс запущен: переведено ${transition.promoted_count}, выпущено ${transition.graduated_count}, пропущено ${transition.skipped_count}.`
-      );
-    } catch (requestError) {
-      setError(apiMessage(requestError));
-    } finally {
-      setStartingCourse(false);
-    }
-  };
-
-  const currentYearStarted = latestTransition?.start_year === currentYear;
-
   return (
     <section className="admin-page">
       <div className="page-heading">
@@ -2138,33 +2352,12 @@ export function SettingsPage() {
           <h2>Системная информация</h2>
         </div>
       </div>
-      {success && <div className="form-success">{success}</div>}
-      {error && <div className="form-error">{error}</div>}
+      <AcademicYearControl />
+      <div className="management-grid">
+        <GroupManagement />
+        <ContingentControl />
+      </div>
       <div className="settings-grid">
-        {user?.role === "tech_admin" && (
-          <article className="academic-year-card">
-            <h3>Учебный год {currentYear}/{currentYear + 1}</h3>
-            <p>
-              Повышает курс у оформленных и зачисленных студентов. Студенты последнего курса
-              автоматически переходят в статус «Выпускник».
-            </p>
-            {latestTransition && (
-              <small>
-                Последний запуск: {latestTransition.start_year}/{latestTransition.start_year + 1},
-                переведено {latestTransition.promoted_count}, выпущено {latestTransition.graduated_count}.
-              </small>
-            )}
-            <button
-              type="button"
-              className="primary-button"
-              onClick={startNewCourse}
-              disabled={startingCourse || currentYearStarted}
-            >
-              <RefreshCw size={16} />
-              {currentYearStarted ? "Новый курс уже запущен" : startingCourse ? "Запуск..." : "Начать новый курс"}
-            </button>
-          </article>
-        )}
         <article>
           <h3>Backend</h3>
           <p>FastAPI, PostgreSQL, SQLAlchemy, Alembic, JWT.</p>

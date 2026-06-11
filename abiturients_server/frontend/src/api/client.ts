@@ -57,6 +57,25 @@ export type AcademicYearTransition = {
   created_at: string;
 };
 
+export type ContingentImport = {
+  id: number;
+  filename: string;
+  created_count: number;
+  updated_count: number;
+  normalized_count: number;
+  created_at: string;
+};
+
+export type GroupFolder = {
+  id: number;
+  name: string;
+  parent_id?: number | null;
+  owner_scope: string;
+  role_scope?: string | null;
+  created_at: string;
+  updated_at: string;
+};
+
 export type ContestChoice = {
   id: number;
   application_id: number;

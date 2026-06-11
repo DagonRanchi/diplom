@@ -125,6 +125,9 @@ class Application(Base):
     tags: Mapped[list[ApplicationTag]] = relationship(
         back_populates="application", cascade="all, delete-orphan"
     )
+    contingent_source: Mapped[ContingentSourceRow | None] = relationship(
+        back_populates="application", cascade="all, delete-orphan", uselist=False
+    )
 
 
 class AdmissionDetails(Base):
@@ -187,6 +190,41 @@ class AcademicYearTransition(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     run_by: Mapped[User | None] = relationship()
+
+
+class ContingentImport(Base):
+    __tablename__ = "contingent_imports"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    checksum: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    headers_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    normalized_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    created_by: Mapped[User | None] = relationship()
+    source_rows: Mapped[list[ContingentSourceRow]] = relationship(back_populates="import_record")
+
+
+class ContingentSourceRow(Base):
+    __tablename__ = "contingent_source_rows"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    application_id: Mapped[int] = mapped_column(
+        ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, unique=True
+    )
+    import_id: Mapped[int] = mapped_column(
+        ForeignKey("contingent_imports.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    external_ei: Mapped[str] = mapped_column(String(64), nullable=False, unique=True, index=True)
+    external_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    raw_row_json: Mapped[str] = mapped_column(Text, nullable=False)
+
+    application: Mapped[Application] = relationship(back_populates="contingent_source")
+    import_record: Mapped[ContingentImport] = relationship(back_populates="source_rows")
 
 
 class Rejection(Base):

@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.rbac import get_current_user
 from app.db.session import get_db
-from app.models import Application, Folder, FolderItem, Role, User
+from app.models import Application, EducationDetails, Folder, FolderItem, Role, User
 from app.schemas.dto import BulkMoveRequest, FolderCreate, FolderItemCreate, FolderRead, FolderTreeNode, FolderUpdate
 from app.services.chat_files import application_storage_names, delete_storage_names
 from app.services.workflow import get_visible_application_or_404, move_application_to_folder
@@ -22,6 +22,15 @@ def ensure_tech_admin(user: User) -> None:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Only technical administrator can delete students")
 
 
+def ensure_group_manager(user: User) -> None:
+    if user.role not in {Role.education_admin.value, Role.tech_admin.value}:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Группами управляет учебная часть")
+
+
+def is_groups_root(folder: Folder | None) -> bool:
+    return bool(folder and folder.name == "Группы" and folder.parent_id is None)
+
+
 def node_from_folder(folder: Folder) -> FolderTreeNode:
     return FolderTreeNode(
         id=folder.id,
@@ -34,6 +43,21 @@ def node_from_folder(folder: Folder) -> FolderTreeNode:
         item_count=len(folder.items),
         children=[node_from_folder(child) for child in sorted(folder.children, key=lambda item: item.name)],
     )
+
+
+def group_name_for_folder(folder: Folder) -> str | None:
+    if is_groups_root(folder.parent):
+        return folder.name
+    return None
+
+
+def sync_application_group(db: Session, application_id: int, folder: Folder) -> None:
+    group_name = group_name_for_folder(folder)
+    if not group_name:
+        return
+    details = db.scalar(select(EducationDetails).where(EducationDetails.application_id == application_id))
+    if details:
+        details.group_number = group_name
 
 
 @router.get("/tree", response_model=list[FolderTreeNode])
@@ -56,8 +80,11 @@ def folder_tree(user: User = Depends(get_current_user), db: Session = Depends(ge
 @router.post("", response_model=FolderRead, status_code=status.HTTP_201_CREATED)
 def create_folder(payload: FolderCreate, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> Folder:
     ensure_folder_operator(user)
-    if payload.parent_id and not db.get(Folder, payload.parent_id):
+    parent = db.get(Folder, payload.parent_id) if payload.parent_id else None
+    if payload.parent_id and not parent:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Parent folder not found")
+    if is_groups_root(parent) or (payload.parent_id is None and payload.name.strip() == "Группы"):
+        ensure_group_manager(user)
     folder = Folder(
         name=payload.name,
         parent_id=payload.parent_id,
@@ -80,8 +107,20 @@ def update_folder(folder_id: int, payload: FolderUpdate, user: User = Depends(ge
     data = payload.model_dump(exclude_unset=True)
     if "parent_id" in data and data["parent_id"] == folder.id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Folder cannot be parent of itself")
+    target_parent = db.get(Folder, data["parent_id"]) if data.get("parent_id") else None
+    resulting_parent_id = data.get("parent_id", folder.parent_id)
+    creating_groups_root = data.get("name", folder.name).strip() == "Группы" and resulting_parent_id is None
+    if is_groups_root(folder) or group_name_for_folder(folder) or is_groups_root(target_parent) or creating_groups_root:
+        ensure_group_manager(user)
+    old_name = folder.name
+    is_group_folder = bool(folder.parent and folder.parent.name == "Группы" and folder.parent.parent_id is None)
     for field, value in data.items():
         setattr(folder, field, value)
+    if is_group_folder and "name" in data and data["name"] != old_name:
+        db.query(EducationDetails).filter(EducationDetails.group_number == old_name).update(
+            {EducationDetails.group_number: data["name"]},
+            synchronize_session=False,
+        )
     db.commit()
     db.refresh(folder)
     return folder
@@ -93,6 +132,13 @@ def delete_folder(folder_id: int, user: User = Depends(get_current_user), db: Se
     folder = db.get(Folder, folder_id)
     if not folder:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
+    if is_groups_root(folder) or group_name_for_folder(folder):
+        ensure_group_manager(user)
+    group_name = group_name_for_folder(folder)
+    if group_name and db.scalar(
+        select(EducationDetails.id).where(EducationDetails.group_number == group_name).limit(1)
+    ):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Группа назначена студентам и не может быть удалена")
     if folder.children or folder.items:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Folder must be empty")
     db.delete(folder)
@@ -109,6 +155,8 @@ def delete_folder_students(
     folder = db.get(Folder, folder_id)
     if not folder:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
+    if group_name_for_folder(folder):
+        ensure_group_manager(user)
 
     ids = list(db.scalars(select(FolderItem.application_id).where(FolderItem.folder_id == folder_id)).all())
     storage_names = application_storage_names(db, ids)
@@ -133,8 +181,11 @@ def add_folder_item(
     folder = db.get(Folder, folder_id)
     if not folder:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
+    if group_name_for_folder(folder):
+        ensure_group_manager(user)
     get_visible_application_or_404(db, payload.application_id, user)
     move_application_to_folder(db, payload.application_id, folder)
+    sync_application_group(db, payload.application_id, folder)
     db.commit()
     db.refresh(folder)
     return folder
@@ -157,8 +208,11 @@ def move_items(payload: BulkMoveRequest, user: User = Depends(get_current_user),
     folder = db.get(Folder, payload.target_folder_id)
     if not folder:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
+    if group_name_for_folder(folder):
+        ensure_group_manager(user)
     for app_id in payload.application_ids:
         get_visible_application_or_404(db, app_id, user)
         move_application_to_folder(db, app_id, folder)
+        sync_application_group(db, app_id, folder)
     db.commit()
     return {"moved": len(payload.application_ids)}
