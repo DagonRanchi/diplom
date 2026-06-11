@@ -41,6 +41,32 @@ export type EducationDetails = {
   expulsion_order_date?: string | null;
   expulsion_reason?: string | null;
   expelled_at?: string | null;
+  graduated_at?: string | null;
+};
+
+export type ContestChoice = {
+  id: number;
+  application_id: number;
+  specialty_id: number;
+  status: string;
+  created_at: string;
+  specialty: Specialty;
+};
+
+export type ContestProfile = {
+  id: number;
+  benefit_group?: string | null;
+  residence_address?: string | null;
+  base_class?: string | null;
+  enrollment_type: "general" | "reinstated" | "transfer";
+  locality_type: "urban" | "rural";
+  instruction_language?: "russian" | "kazakh" | null;
+  study_form: "full_time" | "part_time";
+  needs_dormitory: boolean;
+  accepted_specialty_id?: number | null;
+  submitted_at?: string | null;
+  completed_at?: string | null;
+  accepted_specialty?: Specialty | null;
 };
 
 export type Application = {
@@ -55,6 +81,9 @@ export type Application = {
   updated_at: string;
   admission_details?: AdmissionDetails | null;
   education_details?: EducationDetails | null;
+  contest_profile?: ContestProfile | null;
+  contest_choices: ContestChoice[];
+  contest_visible: boolean;
   folder_id?: number | null;
   chat_id?: number | null;
 };
@@ -88,6 +117,26 @@ export type ChatMessage = {
   message: string;
   created_at: string;
   is_read: boolean;
+  attachments: ChatAttachment[];
+};
+
+export type ChatAttachment = {
+  id: number;
+  original_name: string;
+  content_type: string;
+  size: number;
+  created_at: string;
+};
+
+export type ContestEntry = {
+  choice_id: number;
+  application_id: number;
+  full_name: string;
+  iin: string;
+  base_class: string;
+  qualification: string;
+  specialty: string;
+  created_at: string;
 };
 
 export type Notification = {
@@ -135,7 +184,7 @@ export class ApiError extends Error {
 
 export async function apiFetch<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const headers = new Headers(options.headers);
-  if (!headers.has("Content-Type") && options.body) {
+  if (!headers.has("Content-Type") && options.body && !(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
   if (options.token) {
@@ -180,13 +229,15 @@ export function apiMessage(error: unknown): string {
 export const statusLabels: Record<string, string> = {
   new: "Новая",
   in_admissions_review: "В приемной комиссии",
+  in_contest: "На конкурсе",
   archived_by_admissions: "Архив приемной",
   rejected: "Отклонена",
   accepted_by_admissions: "Поступившие",
   education_review: "Учебная часть",
   enrolled: "Зачислен",
   completed: "Оформлен",
-  expelled: "Отчислен"
+  expelled: "Отчислен",
+  graduated: "Выпускник"
 };
 
 export const roleLabels: Record<Role, string> = {

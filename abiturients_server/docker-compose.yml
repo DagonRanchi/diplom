@@ -30,9 +30,12 @@ services:
       ACCESS_TOKEN_EXPIRE_MINUTES: 720
       CORS_ORIGINS: http://localhost:5173,http://localhost:8080
       ENVIRONMENT: local
+      UPLOAD_DIR: /app/uploads/chat
       PORT: 8000
     ports:
       - "8000:8000"
+    volumes:
+      - chat_uploads:/app/uploads
 
   frontend:
     build:
@@ -47,3 +50,4 @@ services:
 
 volumes:
   postgres_data:
+  chat_uploads:

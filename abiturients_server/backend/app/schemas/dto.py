@@ -68,6 +68,75 @@ class SpecialtyRead(BaseModel):
     qualification: str
 
 
+class ApplicantAccessRequest(BaseModel):
+    iin: str = Field(min_length=12, max_length=12)
+    phone: str = Field(min_length=5, max_length=64)
+
+
+class ApplicantAccessResponse(BaseModel):
+    application_id: int
+    public_token: str
+    status: str
+
+
+class ContestChoiceRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    application_id: int
+    specialty_id: int
+    status: str
+    created_at: datetime
+    specialty: SpecialtyRead
+
+
+class ContestProfileRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    benefit_group: str | None = None
+    residence_address: str | None = None
+    base_class: str | None = None
+    enrollment_type: str
+    locality_type: str
+    instruction_language: str | None = None
+    study_form: str
+    needs_dormitory: bool
+    accepted_specialty_id: int | None = None
+    submitted_at: datetime | None = None
+    completed_at: datetime | None = None
+    accepted_specialty: SpecialtyRead | None = None
+
+
+class ContestApplicationUpdate(BaseModel):
+    benefit_group: str | None = None
+    residence_address: str | None = None
+    base_class: str | None = Field(default=None, max_length=64)
+    enrollment_type: EnrollmentType | None = None
+    locality_type: LocalityType | None = None
+    instruction_language: InstructionLanguage | None = None
+    study_form: StudyForm | None = None
+    needs_dormitory: bool | None = None
+    specialty_ids: list[int] | None = Field(default=None, min_length=1, max_length=4)
+
+    @model_validator(mode="after")
+    def unique_specialties(self) -> "ContestApplicationUpdate":
+        if self.specialty_ids is not None and len(set(self.specialty_ids)) != len(self.specialty_ids):
+            raise ValueError("Специальности не должны повторяться")
+        return self
+
+
+class ContestEntryRead(BaseModel):
+    choice_id: int
+    application_id: int
+    full_name: str
+    iin: str
+    base_class: str
+    qualification: str
+    specialty: str
+    created_at: datetime
+
+
 class AdmissionDetailsRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -115,6 +184,7 @@ class EducationDetailsRead(BaseModel):
     expulsion_order_date: date | None = None
     expulsion_reason: str | None = None
     expelled_at: datetime | None = None
+    graduated_at: datetime | None = None
 
 
 class EducationDetailsUpdate(BaseModel):
@@ -177,6 +247,9 @@ class ApplicationRead(BaseModel):
     updated_at: datetime
     admission_details: AdmissionDetailsRead | None = None
     education_details: EducationDetailsRead | None = None
+    contest_profile: ContestProfileRead | None = None
+    contest_choices: list[ContestChoiceRead] = Field(default_factory=list)
+    contest_visible: bool = False
     folder_id: int | None = None
     chat_id: int | None = None
 
@@ -270,6 +343,17 @@ class ChatMessageRead(BaseModel):
     message: str
     created_at: datetime
     is_read: bool
+    attachments: list["ChatAttachmentRead"] = Field(default_factory=list)
+
+
+class ChatAttachmentRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    original_name: str
+    content_type: str
+    size: int
+    created_at: datetime
 
 
 class ChatRead(BaseModel):

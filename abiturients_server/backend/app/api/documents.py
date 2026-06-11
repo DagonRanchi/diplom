@@ -27,6 +27,7 @@ STATUS_LABELS = {
     ApplicationStatus.completed.value: "Оформлен",
     ApplicationStatus.enrolled.value: "Зачислен",
     ApplicationStatus.expelled.value: "Отчислен",
+    ApplicationStatus.graduated.value: "Выпускник",
 }
 
 VALUE_LABELS = {
@@ -88,6 +89,7 @@ def download_application_pdf(
         ApplicationStatus.completed.value,
         ApplicationStatus.enrolled.value,
         ApplicationStatus.expelled.value,
+        ApplicationStatus.graduated.value,
     }:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="PDF доступен после оформления студента")
 

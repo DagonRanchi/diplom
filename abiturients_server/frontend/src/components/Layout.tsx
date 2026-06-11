@@ -5,6 +5,7 @@ import {
   FileText,
   FolderTree,
   GraduationCap,
+  ListTree,
   LayoutDashboard,
   LogOut,
   MessageCircle,
@@ -33,8 +34,9 @@ export function ProtectedRoute({ allowed, children }: { allowed?: Role[]; childr
 const adminLinks = [
   { to: "/admin/dashboard", label: "Дашборд", icon: LayoutDashboard, roles: ["tech_admin", "admissions_admin", "education_admin"] },
   { to: "/admin/applications", label: "Заявки", icon: FileText, roles: ["tech_admin", "admissions_admin", "education_admin"] },
+  { to: "/admin/contest", label: "Конкурс", icon: ListTree, roles: ["tech_admin", "admissions_admin", "education_admin", "assistant"] },
   { to: "/admin/file-manager", label: "Папки", icon: FolderTree, roles: ["tech_admin", "admissions_admin", "education_admin"] },
-  { to: "/admin/chats", label: "Чаты", icon: MessageCircle, roles: ["tech_admin", "admissions_admin", "education_admin", "assistant"] },
+  { to: "/admin/chats", label: "Чаты", icon: MessageCircle, roles: ["tech_admin", "admissions_admin", "education_admin"] },
   { to: "/admin/users", label: "Пользователи", icon: Users, roles: ["tech_admin"] },
   { to: "/admin/settings", label: "Настройки", icon: Settings, roles: ["tech_admin", "admissions_admin", "education_admin"] },
 ];

@@ -11,6 +11,8 @@ from app.models import (
     AcademicPerformance,
     Chat,
     ChatMessage,
+    ContestChoice,
+    ContestProfile,
     EducationDetails,
     Folder,
     FolderItem,
@@ -24,15 +26,18 @@ from app.models import (
 ADMISSIONS_STATUSES = {
     ApplicationStatus.new.value,
     ApplicationStatus.in_admissions_review.value,
+    ApplicationStatus.in_contest.value,
     ApplicationStatus.archived_by_admissions.value,
     ApplicationStatus.rejected.value,
 }
 EDUCATION_STATUSES = {
+    ApplicationStatus.in_contest.value,
     ApplicationStatus.accepted_by_admissions.value,
     ApplicationStatus.education_review.value,
     ApplicationStatus.enrolled.value,
     ApplicationStatus.completed.value,
     ApplicationStatus.expelled.value,
+    ApplicationStatus.graduated.value,
 }
 ADMISSIONS_ACTIONABLE_STATUSES = {
     ApplicationStatus.new.value,
@@ -52,6 +57,8 @@ def query_applications_for_user(db: Session, user: User):
             joinedload(Application.education_details),
             joinedload(Application.folder_item),
             joinedload(Application.chat),
+            joinedload(Application.contest_profile).joinedload(ContestProfile.accepted_specialty),
+            joinedload(Application.contest_choices).joinedload(ContestChoice.specialty),
         )
     )
     if user.role == Role.tech_admin.value:
@@ -87,6 +94,8 @@ def get_visible_application_or_404(db: Session, app_id: int, user: User) -> Appl
             joinedload(Application.education_details),
             joinedload(Application.folder_item),
             joinedload(Application.chat),
+            joinedload(Application.contest_profile).joinedload(ContestProfile.accepted_specialty),
+            joinedload(Application.contest_choices).joinedload(ContestChoice.specialty),
         )
         .filter(Application.id == app_id)
         .first()
@@ -132,7 +141,7 @@ def ensure_status_allowed(app: Application, allowed_statuses: set[str], message:
 def get_or_create_chat(db: Session, app: Application) -> Chat:
     if app.chat:
         return app.chat
-    chat = Chat(application_id=app.id)
+    chat = Chat(application=app)
     db.add(chat)
     db.flush()
     return chat

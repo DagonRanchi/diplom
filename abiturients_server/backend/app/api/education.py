@@ -116,6 +116,21 @@ def expel_education_application(app: Application, payload: ExpelRequest, user: U
     return app
 
 
+def graduate_education_application(app: Application, user: User, db: Session) -> Application:
+    ensure_education_operator(user)
+    ensure_status_allowed(
+        app,
+        {ApplicationStatus.completed.value, ApplicationStatus.enrolled.value},
+        "Выпустить можно только оформленного студента",
+    )
+    details = get_or_create_education_details(db, app)
+    details.graduated_at = datetime.now(UTC)
+    app.status = ApplicationStatus.graduated.value
+    folder = ensure_folder_path(db, ["Учебная часть", "Выпускники"], Role.education_admin.value, user.id)
+    move_application_to_folder(db, app.id, folder)
+    return app
+
+
 @router.get("/applications", response_model=list[ApplicationRead])
 def education_applications(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[ApplicationRead]:
     if user.role not in {Role.education_admin.value, Role.tech_admin.value, Role.teacher.value}:
@@ -192,6 +207,19 @@ def expel_application(
 ) -> ApplicationRead:
     app = get_visible_application_or_404(db, application_id, user)
     expel_education_application(app, payload, user, db)
+    db.commit()
+    db.refresh(app)
+    return serialize_application(app)
+
+
+@router.post("/applications/{application_id}/graduate", response_model=ApplicationRead)
+def graduate_application(
+    application_id: int,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ApplicationRead:
+    app = get_visible_application_or_404(db, application_id, user)
+    graduate_education_application(app, user, db)
     db.commit()
     db.refresh(app)
     return serialize_application(app)

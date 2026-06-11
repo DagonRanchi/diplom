@@ -4,6 +4,7 @@ import {
   ApplicationDetailsPage,
   ApplicationsPage,
   ChatsPage,
+  ContestPage,
   DashboardPage,
   FileManagerPage,
   LoginPage,
@@ -11,7 +12,7 @@ import {
   UsersPage,
 } from "./pages/admin/AdminPages";
 import { AssistantChatsPage } from "./pages/assistant/AssistantPages";
-import { ApplyPage, HomePage, PublicChatPage } from "./pages/public/PublicPages";
+import { ApplicantLoginPage, ApplyPage, HomePage, PublicChatPage } from "./pages/public/PublicPages";
 import { TeacherStudentsPage } from "./pages/teacher/TeacherPages";
 
 export default function App() {
@@ -19,6 +20,7 @@ export default function App() {
     <Routes>
       <Route path="/" element={<HomePage />} />
       <Route path="/apply" element={<ApplyPage />} />
+      <Route path="/applicant/login" element={<ApplicantLoginPage />} />
       <Route path="/chat/:applicationId" element={<PublicChatPage />} />
       <Route path="/admin/login" element={<LoginPage />} />
 
@@ -31,6 +33,7 @@ export default function App() {
       >
         <Route path="/admin/dashboard" element={<DashboardPage />} />
         <Route path="/admin/applications" element={<ApplicationsPage />} />
+        <Route path="/admin/contest" element={<ContestPage />} />
         <Route path="/admin/file-manager" element={<FileManagerPage />} />
         <Route path="/admin/applications/:applicationId" element={<ApplicationDetailsPage />} />
         <Route path="/admin/chats" element={<ChatsPage />} />

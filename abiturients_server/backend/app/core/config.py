@@ -19,6 +19,8 @@ class Settings(BaseSettings):
         alias="CORS_ORIGINS",
     )
     environment: str = Field(default="local", alias="ENVIRONMENT")
+    upload_dir: str = Field(default="uploads/chat", alias="UPLOAD_DIR")
+    max_chat_file_size: int = Field(default=10_485_760, alias="MAX_CHAT_FILE_SIZE")
 
     @property
     def cors_origin_list(self) -> list[str]:

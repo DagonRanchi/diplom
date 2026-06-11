@@ -11,6 +11,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     String,
     Text,
     UniqueConstraint,
@@ -32,6 +33,7 @@ class Role(str, enum.Enum):
 class ApplicationStatus(str, enum.Enum):
     new = "new"
     in_admissions_review = "in_admissions_review"
+    in_contest = "in_contest"
     archived_by_admissions = "archived_by_admissions"
     rejected = "rejected"
     accepted_by_admissions = "accepted_by_admissions"
@@ -39,6 +41,7 @@ class ApplicationStatus(str, enum.Enum):
     enrolled = "enrolled"
     completed = "completed"
     expelled = "expelled"
+    graduated = "graduated"
 
 
 class PaymentType(str, enum.Enum):
@@ -113,6 +116,12 @@ class Application(Base):
     )
     chat: Mapped[Chat | None] = relationship(back_populates="application", cascade="all, delete-orphan", uselist=False)
     rejection: Mapped[Rejection | None] = relationship(back_populates="application", uselist=False)
+    contest_profile: Mapped[ContestProfile | None] = relationship(
+        back_populates="application", cascade="all, delete-orphan", uselist=False
+    )
+    contest_choices: Mapped[list[ContestChoice]] = relationship(
+        back_populates="application", cascade="all, delete-orphan"
+    )
 
 
 class AdmissionDetails(Base):
@@ -153,6 +162,7 @@ class EducationDetails(Base):
     expulsion_order_date: Mapped[date | None] = mapped_column(Date)
     expulsion_reason: Mapped[str | None] = mapped_column(Text)
     expelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    graduated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     application: Mapped[Application] = relationship(back_populates="education_details")
     curator: Mapped[User | None] = relationship(back_populates="curated_students")
@@ -234,6 +244,22 @@ class ChatMessage(Base):
 
     chat: Mapped[Chat] = relationship(back_populates="messages")
     sender_user: Mapped[User | None] = relationship(foreign_keys=[sender_user_id])
+    attachments: Mapped[list[ChatAttachment]] = relationship(back_populates="message", cascade="all, delete-orphan")
+
+
+class ChatAttachment(Base):
+    __tablename__ = "chat_attachments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    message_id: Mapped[int] = mapped_column(ForeignKey("chat_messages.id", ondelete="CASCADE"), nullable=False, index=True)
+    storage_name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    original_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(150), nullable=False)
+    size: Mapped[int] = mapped_column(Integer, nullable=False)
+    content: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    message: Mapped[ChatMessage] = relationship(back_populates="attachments")
 
 
 class Notification(Base):
@@ -258,6 +284,53 @@ class Specialty(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     qualification: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    contest_profiles: Mapped[list[ContestProfile]] = relationship(back_populates="accepted_specialty")
+    contest_choices: Mapped[list[ContestChoice]] = relationship(back_populates="specialty")
+
+
+class ContestProfile(Base):
+    __tablename__ = "contest_profiles"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    application_id: Mapped[int] = mapped_column(
+        ForeignKey("applications.id", ondelete="CASCADE"), unique=True, nullable=False
+    )
+    benefit_group: Mapped[str | None] = mapped_column(String(255))
+    residence_address: Mapped[str | None] = mapped_column(String(500))
+    base_class: Mapped[str | None] = mapped_column(String(64), index=True)
+    enrollment_type: Mapped[str] = mapped_column(String(32), nullable=False, default=EnrollmentType.general.value)
+    locality_type: Mapped[str] = mapped_column(String(32), nullable=False, default=LocalityType.urban.value)
+    instruction_language: Mapped[str | None] = mapped_column(String(32))
+    study_form: Mapped[str] = mapped_column(String(32), nullable=False, default=StudyForm.full_time.value)
+    needs_dormitory: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    accepted_specialty_id: Mapped[int | None] = mapped_column(
+        ForeignKey("specialties.id", ondelete="SET NULL"), index=True
+    )
+    submitted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    application: Mapped[Application] = relationship(back_populates="contest_profile")
+    accepted_specialty: Mapped[Specialty | None] = relationship(back_populates="contest_profiles")
+
+
+class ContestChoice(Base):
+    __tablename__ = "contest_choices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    application_id: Mapped[int] = mapped_column(
+        ForeignKey("applications.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    specialty_id: Mapped[int] = mapped_column(
+        ForeignKey("specialties.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    application: Mapped[Application] = relationship(back_populates="contest_choices")
+    specialty: Mapped[Specialty] = relationship(back_populates="contest_choices")
+
+    __table_args__ = (UniqueConstraint("application_id", "specialty_id", name="uq_contest_application_specialty"),)
 
 
 Index("ix_applications_search", Application.full_name, Application.iin, Application.phone, Application.email)

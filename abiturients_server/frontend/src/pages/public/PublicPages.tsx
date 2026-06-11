@@ -1,7 +1,8 @@
-import { ArrowRight, CheckCircle2, HelpCircle, MessageCircle, Send, Sparkles } from "lucide-react";
+import { ArrowRight, CheckCircle2, HelpCircle, MessageCircle, Paperclip, Send, Sparkles, X } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { apiFetch, apiMessage, ChatMessage, CollegeInfo, Specialty } from "../../api/client";
+import { API_URL, apiFetch, apiMessage, ChatMessage, CollegeInfo, Specialty } from "../../api/client";
+import { ChatAttachments } from "../../components/ChatAttachments";
 import { SiteFooter } from "../../components/Layout";
 
 function iinIsValid(iin: string, birthDate: string) {
@@ -28,6 +29,7 @@ export function HomePage() {
         </Link>
         <div className="public-nav-actions">
           <Link to="/apply" className="ghost-link">Подать заявку</Link>
+          <Link to="/applicant/login" className="ghost-link">Моя заявка</Link>
           <Link to="/admin/login" className="ghost-link">Вход</Link>
         </div>
       </header>
@@ -150,6 +152,57 @@ export function HomePage() {
   );
 }
 
+export function ApplicantLoginPage() {
+  const navigate = useNavigate();
+  const [iin, setIin] = useState("");
+  const [phone, setPhone] = useState("");
+  const [error, setError] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    setSubmitting(true);
+    setError("");
+    try {
+      const access = await apiFetch<{ application_id: number; public_token: string }>("/applicant/access", {
+        method: "POST",
+        body: JSON.stringify({ iin, phone }),
+      });
+      localStorage.setItem(`cet_application_${access.application_id}`, access.public_token);
+      navigate(`/chat/${access.application_id}`);
+    } catch (err) {
+      setError(apiMessage(err));
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="form-page">
+      <Link to="/" className="public-logo">
+        <img src="/logo_cet.png" alt="КЭТ" />
+        <span>Колледж экономики и техники</span>
+      </Link>
+      <form className="application-form applicant-login" onSubmit={submit}>
+        <p className="eyebrow">Доступ к заявке</p>
+        <h1>Продолжить общение</h1>
+        <p className="muted">Введите ИИН и телефон, указанные при подаче заявки.</p>
+        <label>
+          <span>ИИН</span>
+          <input required inputMode="numeric" value={iin} onChange={(event) => setIin(event.target.value.replace(/\D/g, "").slice(0, 12))} />
+        </label>
+        <label>
+          <span>Телефон</span>
+          <input required value={phone} onChange={(event) => setPhone(event.target.value)} />
+        </label>
+        {error && <div className="form-error">{error}</div>}
+        <button className="primary-button" disabled={submitting}>{submitting ? "Проверка..." : "Открыть заявку"}</button>
+      </form>
+      <SiteFooter />
+    </div>
+  );
+}
+
 export function ApplyPage() {
   const navigate = useNavigate();
   const [form, setForm] = useState({ iin: "", birth_date: "", full_name: "", email: "", phone: "" });
@@ -178,8 +231,7 @@ export function ApplyPage() {
       localStorage.setItem(`cet_application_${created.id}`, created.public_token);
       setSuccess({ id: created.id, token: created.public_token });
     } catch (err) {
-      const message = apiMessage(err);
-      setError(message.includes("ИИН") ? "Неправильный ИИН" : message);
+      setError(apiMessage(err));
     } finally {
       setSubmitting(false);
     }
@@ -246,6 +298,8 @@ export function PublicChatPage() {
   const [token, setToken] = useState(() => localStorage.getItem(storageKey) ?? "");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState("");
 
   const canLoad = useMemo(() => Boolean(applicationId && token), [applicationId, token]);
@@ -271,14 +325,42 @@ export function PublicChatPage() {
 
   const send = async (event: FormEvent) => {
     event.preventDefault();
-    if (!applicationId || !text.trim()) return;
-    await apiFetch<ChatMessage>(`/applications/${applicationId}/chat/messages`, {
-      method: "POST",
-      applicationToken: token,
-      body: JSON.stringify({ message: text.trim() })
+    if (!applicationId || (!text.trim() && !file)) return;
+    setUploading(true);
+    setError("");
+    try {
+      if (file) {
+        const form = new FormData();
+        form.append("file", file);
+        form.append("message", text.trim());
+        await apiFetch<ChatMessage>(`/applications/${applicationId}/chat/attachments`, {
+          method: "POST",
+          applicationToken: token,
+          body: form,
+        });
+      } else {
+        await apiFetch<ChatMessage>(`/applications/${applicationId}/chat/messages`, {
+          method: "POST",
+          applicationToken: token,
+          body: JSON.stringify({ message: text.trim() })
+        });
+      }
+      setText("");
+      setFile(null);
+      await load();
+    } catch (err) {
+      setError(apiMessage(err));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const loadAttachment = async (attachment: ChatMessage["attachments"][number]) => {
+    const response = await fetch(`${API_URL}/applications/${applicationId}/chat/attachments/${attachment.id}`, {
+      headers: { "X-Application-Token": token },
     });
-    setText("");
-    await load();
+    if (!response.ok) throw new Error("Не удалось загрузить файл");
+    return response.blob();
   };
 
   return (
@@ -290,10 +372,9 @@ export function PublicChatPage() {
       <section className="chat-card">
         {!token && (
           <div className="token-panel">
-            <h1>Введите код доступа</h1>
-            <p>Код был сохранен после отправки заявки. Если вы открыли чат с того же устройства, он подставится автоматически.</p>
-            <input value={token} onChange={(event) => setToken(event.target.value)} placeholder="Код доступа к заявке" />
-            <button className="primary-button" onClick={load}>Открыть чат</button>
+            <h1>Восстановите доступ</h1>
+            <p>Войдите по ИИН и номеру телефона, указанному при подаче заявки.</p>
+            <Link className="primary-button" to="/applicant/login">Войти в заявку</Link>
           </div>
         )}
         {token && (
@@ -303,6 +384,7 @@ export function PublicChatPage() {
                 <div key={message.id} className={`message-bubble ${message.sender_type === "applicant" ? "mine" : "staff"}`}>
                   <span>{message.sender_type === "applicant" ? "Вы" : "Администрация"}</span>
                   <p>{message.message}</p>
+                  <ChatAttachments attachments={message.attachments ?? []} loadAttachment={loadAttachment} />
                 </div>
               ))}
               {!messages.length && <p className="muted">Сообщений пока нет. Напишите вопрос приемной комиссии.</p>}
@@ -310,7 +392,16 @@ export function PublicChatPage() {
             {error && <div className="form-error">{error}</div>}
             <form className="chat-input" onSubmit={send}>
               <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Напишите сообщение..." />
-              <button className="primary-button">Отправить</button>
+              <label className="attachment-picker" title="Прикрепить документ">
+                <Paperclip size={18} />
+                <input
+                  type="file"
+                  accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx"
+                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                />
+              </label>
+              <button className="primary-button" disabled={uploading}>{uploading ? "Отправка..." : "Отправить"}</button>
+              {file && <span className="selected-file">{file.name} <button type="button" onClick={() => setFile(null)}><X size={14} /></button></span>}
             </form>
           </>
         )}

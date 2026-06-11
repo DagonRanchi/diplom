@@ -193,23 +193,10 @@ def reject_single(
 @router.post("/{application_id:int}/accept", response_model=ApplicationRead)
 def accept_application(application_id: int, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> ApplicationRead:
     ensure_admissions_operator(user)
-    app = get_visible_application_or_404(db, application_id, user)
-    ensure_status_allowed(app, ADMISSIONS_ACTIONABLE_STATUSES, "Эту заявку уже нельзя принять")
-    app.status = ApplicationStatus.accepted_by_admissions.value
-    get_or_create_education_details(db, app)
-    folder = ensure_folder_path(db, ["Учебная часть", "Требуют оформления"], Role.education_admin.value, user.id)
-    move_application_to_folder(db, app.id, folder)
-    notify_roles(
-        db,
-        [Role.education_admin, Role.tech_admin],
-        "Заявка принята приемной комиссией",
-        f"{app.full_name} ожидает оформления в учебной части.",
-        "application_accepted",
-        app.id,
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Сначала отправьте заявку на конкурс и примите выбранную специальность",
     )
-    db.commit()
-    db.refresh(app)
-    return serialize_application(app)
 
 
 @router.post("/bulk/archive", response_model=list[ApplicationRead])
@@ -243,18 +230,10 @@ def bulk_reject(payload: BulkRejectRequest, user: User = Depends(get_current_use
 @router.post("/bulk/accept", response_model=list[ApplicationRead])
 def bulk_accept(payload: BulkIdsRequest, user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[ApplicationRead]:
     ensure_admissions_operator(user)
-    result = []
-    folder = ensure_folder_path(db, ["Учебная часть", "Требуют оформления"], Role.education_admin.value, user.id)
-    for app_id in payload.application_ids:
-        app = get_visible_application_or_404(db, app_id, user)
-        ensure_status_allowed(app, ADMISSIONS_ACTIONABLE_STATUSES, "Среди выбранных есть заявки, которые нельзя принять")
-        app.status = ApplicationStatus.accepted_by_admissions.value
-        get_or_create_education_details(db, app)
-        move_application_to_folder(db, app.id, folder)
-        result.append(app)
-    notify_roles(db, [Role.education_admin, Role.tech_admin], "Новые принятые заявки", "Приемная комиссия передала заявки в учебную часть.", "bulk_accepted")
-    db.commit()
-    return [serialize_application(app) for app in result]
+    raise HTTPException(
+        status_code=status.HTTP_409_CONFLICT,
+        detail="Массовое принятие выполняется по направлениям в разделе «Конкурс»",
+    )
 
 
 @router.post("/bulk/move", response_model=list[ApplicationRead])

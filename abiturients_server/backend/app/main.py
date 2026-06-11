@@ -5,7 +5,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import admin_applications, auth, chats, documents, education, folders, notifications, public, users
+from app.api import admin_applications, auth, chats, contest, documents, education, folders, notifications, public, users
 from app.core.config import get_settings
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -48,6 +48,7 @@ app.include_router(admin_applications.router)
 app.include_router(documents.router)
 app.include_router(education.router)
 app.include_router(folders.router)
+app.include_router(contest.router)
 app.include_router(chats.router)
 app.include_router(users.router)
 app.include_router(notifications.router)

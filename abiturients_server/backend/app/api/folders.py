@@ -6,6 +6,7 @@ from app.core.rbac import get_current_user
 from app.db.session import get_db
 from app.models import Application, Folder, FolderItem, Role, User
 from app.schemas.dto import BulkMoveRequest, FolderCreate, FolderItemCreate, FolderRead, FolderTreeNode, FolderUpdate
+from app.services.chat_files import application_storage_names, delete_storage_names
 from app.services.workflow import get_visible_application_or_404, move_application_to_folder
 
 router = APIRouter(prefix="/folders", tags=["Folders"])
@@ -109,13 +110,15 @@ def delete_folder_students(
     if not folder:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Folder not found")
 
-    application_ids = select(FolderItem.application_id).where(FolderItem.folder_id == folder_id)
+    ids = list(db.scalars(select(FolderItem.application_id).where(FolderItem.folder_id == folder_id)).all())
+    storage_names = application_storage_names(db, ids)
     result = db.execute(
         delete(Application)
-        .where(Application.id.in_(application_ids))
+        .where(Application.id.in_(ids))
         .execution_options(synchronize_session=False)
     )
     db.commit()
+    delete_storage_names(storage_names)
     return {"deleted": result.rowcount or 0}
 
 

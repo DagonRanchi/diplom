@@ -77,6 +77,8 @@ def seed_folders(db: Session, tech_user: User) -> None:
     ensure_folder_path(db, ["Учебная часть", "Требуют оформления"], Role.education_admin.value, tech_user.id)
     ensure_folder_path(db, ["Учебная часть", "Оформленные"], Role.education_admin.value, tech_user.id)
     ensure_folder_path(db, ["Учебная часть", "Отчисленные"], Role.education_admin.value, tech_user.id)
+    ensure_folder_path(db, ["Учебная часть", "Выпускники"], Role.education_admin.value, tech_user.id)
+    ensure_folder_path(db, ["Конкурс"], Role.admissions_admin.value, tech_user.id)
     ensure_folder_path(db, ["Группы"], Role.education_admin.value, tech_user.id)
     ensure_folder_path(db, ["Группы", "ИС-1-24"], Role.education_admin.value, tech_user.id)
     ensure_folder_path(db, ["Группы", "ЭК-1-24"], Role.education_admin.value, tech_user.id)

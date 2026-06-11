@@ -94,9 +94,18 @@ button {
   box-shadow: 0 1px 0 rgba(18, 59, 100, 0.04), 0 6px 16px rgba(18, 59, 100, 0.08);
 }
 
+.danger-button,
 .toolbar button.danger-button {
   color: #9d1f2e;
   background: #fff0f1;
+  border: 1px solid #ffd0d5;
+  border-radius: 8px;
+  min-height: 42px;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
   border-color: #ffd0d5;
 }
 
@@ -658,8 +667,96 @@ textarea:focus {
 .chat-input {
   margin-top: 14px;
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 10px;
+}
+
+.attachment-picker {
+  width: 44px;
+  min-height: 42px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--blue-700);
+  cursor: pointer;
+}
+
+.attachment-picker input {
+  display: none;
+}
+
+.selected-file {
+  grid-column: 1 / -1;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.selected-file button {
+  border: 0;
+  background: transparent;
+  color: #9d1f2e;
+  padding: 0;
+}
+
+.chat-attachments {
+  margin-top: 10px;
+  display: grid;
+  gap: 8px;
+}
+
+.chat-attachment {
+  min-width: min(420px, 62vw);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 9px;
+  border-radius: 8px;
+  background: rgba(234, 247, 255, 0.88);
+  color: var(--ink);
+}
+
+.chat-attachment > img,
+.chat-attachment > iframe {
+  grid-column: 1 / -1;
+  width: 100%;
+  max-height: 360px;
+  border: 0;
+  border-radius: 6px;
+  object-fit: contain;
+  background: white;
+}
+
+.chat-attachment > iframe {
+  height: 340px;
+}
+
+.chat-attachment > div {
+  min-width: 0;
+  display: grid;
+}
+
+.chat-attachment strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.chat-attachment small {
+  color: var(--muted);
+}
+
+.chat-attachment button {
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: white;
+  color: var(--blue-700);
 }
 
 .admin-shell {
@@ -828,9 +925,15 @@ textarea:focus {
 }
 
 .status-completed,
-.status-enrolled {
+.status-enrolled,
+.status-graduated {
   background: #edfff3;
   color: #166534;
+}
+
+.status-in_contest {
+  background: #fff6cf;
+  color: #735c0f;
 }
 
 .status-expelled {
@@ -1089,6 +1192,57 @@ td span {
 .panel-form .primary-button,
 .panel-form .action-row {
   grid-column: 1 / -1;
+}
+
+.contest-context,
+.contest-specialties {
+  grid-column: 1 / -1;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  display: grid;
+  gap: 8px;
+  background: #f8fbfe;
+}
+
+.contest-context small,
+.contest-specialties small {
+  color: var(--muted);
+}
+
+.contest-specialty-row {
+  display: grid;
+  grid-template-columns: minmax(240px, 1fr) minmax(180px, 0.7fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.contest-specialty-row > span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.contest-specialty-row > button {
+  width: 38px;
+  height: 38px;
+  border-radius: 8px;
+  border: 1px solid #ffd0d5;
+  background: #fff0f1;
+  color: #9d1f2e;
+}
+
+.contest-level {
+  cursor: default;
+  font-size: 13px;
+}
+
+.contest-manager .file-card .secondary-button {
+  margin-top: auto;
+}
+
+.applicant-login {
+  display: grid;
+  gap: 14px;
 }
 
 .checkbox-line {

@@ -131,6 +131,7 @@ admin12345
 - `/admin/login`
 - `/admin/dashboard`
 - `/admin/applications`
+- `/admin/contest`
 - `/admin/file-manager`
 - `/admin/applications/:id`
 - `/admin/chats`
@@ -171,22 +172,26 @@ admin12345
 
 - `new`
 - `in_admissions_review`
+- `in_contest`
 - `archived_by_admissions`
 - `rejected`
 - `accepted_by_admissions`
 - `education_review`
 - `enrolled`
 - `completed`
+- `expelled`
+- `graduated`
 
 Переходы:
 
 1. Абитуриент подает заявку.
 2. Заявка попадает в папку `Приемная комиссия / Новые заявки`.
-3. Приемная комиссия может архивировать, отклонить или принять заявку.
-4. При принятии заявка переходит в `Учебная часть / Требуют оформления`.
-5. Учебная часть назначает куратора, группу, курс и тип оплаты.
-6. После сохранения полностью оформленный студент переходит в папку своей группы.
-7. Преподаватель-куратор видит только своих студентов.
+3. Приемная комиссия заполняет вкладку «Конкурс» и выбирает до четырех специальностей.
+4. После отправки заявка получает статус `in_contest` и появляется в конкурсном дереве.
+5. При принятии выбранного направления остальные конкурсные направления удаляются, а заявка переходит в `Учебная часть / Требуют оформления`.
+6. Учебная часть назначает куратора, группу, курс и тип оплаты.
+7. После сохранения полностью оформленный студент переходит в папку своей группы.
+8. Преподаватель-куратор видит только своих студентов.
 
 ## Деплой на Render
 
@@ -222,10 +227,10 @@ admin12345
 - `GET|PATCH /admin/applications`
 - `POST /admin/applications/{id}/archive`
 - `POST /admin/applications/{id}/reject`
-- `POST /admin/applications/{id}/accept`
+- `POST /admin/applications/{id}/accept` — legacy endpoint, прямое принятие отключено
 - `POST /admin/applications/bulk/archive`
 - `POST /admin/applications/bulk/reject`
-- `POST /admin/applications/bulk/accept`
+- `POST /admin/applications/bulk/accept` — legacy endpoint, прямое принятие отключено
 - `PATCH /admin/applications/bulk/update`
 - `GET|PATCH /education/applications/{id}/details`
 - `POST /education/applications/{id}/save`
@@ -234,8 +239,18 @@ admin12345
 - `GET /folders/tree`
 - `POST /folders/move-items`
 - `DELETE /folders/{id}/students` — удалить все анкеты из папки (только технический администратор)
+- `GET /contest/entries`
+- `PATCH /contest/applications/{id}` — сохранить конкурсные данные
+- `POST /contest/applications/{id}/submit` — отправить заявку на конкурс
+- `POST /contest/choices/{id}/accept|reject`
+- `POST /applicant/access` — восстановить доступ по ИИН и телефону
+- `POST /applications/{id}/chat/attachments`
+- `POST /admin/chats/{id}/attachments`
+- `DELETE /admin/chats/{id}` — удалить чат и его файлы
 - `GET|POST /admin/chats/{id}/messages`
 - `GET|POST /users`
 - `GET /notifications`
 
 Полная интерактивная документация доступна на `/docs`.
+
+Вложения чата ограничены 10 МБ. Поддерживаются PDF, изображения, Word и Excel; содержимое хранится в базе данных и локальном каталоге `UPLOAD_DIR`.

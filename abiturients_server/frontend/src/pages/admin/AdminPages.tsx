@@ -5,7 +5,9 @@ import {
   Download,
   Folder as FolderIcon,
   FolderPlus,
+  GraduationCap,
   MessageCircle,
+  Paperclip,
   Pencil,
   Plus,
   RefreshCw,
@@ -25,6 +27,7 @@ import {
   Application,
   Chat,
   ChatMessage,
+  ContestEntry,
   FolderNode,
   roleLabels,
   Specialty,
@@ -32,6 +35,7 @@ import {
   User,
 } from "../../api/client";
 import { EmptyState, StatusBadge } from "../../components/Layout";
+import { ChatAttachments } from "../../components/ChatAttachments";
 import { useAuth } from "../../context/AuthContext";
 
 const statusOptions = Object.keys(statusLabels);
@@ -249,7 +253,6 @@ export function ApplicationsPage() {
         {canUseAdmissionsActions && canProcessSelection && (
           <>
             <button onClick={() => bulk("archive")}><Archive size={16} /> Архивировать</button>
-            <button onClick={() => bulk("accept")}><Check size={16} /> Принять</button>
             <button onClick={() => bulk("reject")}><X size={16} /> Отклонить</button>
           </>
         )}
@@ -353,9 +356,9 @@ export function FileManagerPage() {
   };
 
   const deleteAllStudents = async () => {
-    if (!token || !folderId || !currentFolder?.item_count) return;
+    if (!token || !folderId || !apps.length) return;
     const confirmed = window.confirm(
-      `Удалить всех студентов из папки «${currentFolder.name}» (${currentFolder.item_count})?\n\nЭто действие нельзя отменить.`
+      `Удалить всех студентов из папки «${currentFolder?.name ?? ""}» (${apps.length})?\n\nЭто действие нельзя отменить.`
     );
     if (!confirmed) return;
 
@@ -538,8 +541,8 @@ export function FileManagerPage() {
           <div className="toolbar compact">
             {folderId !== null && <button onClick={renameFolder}><Pencil size={16} /> Переименовать</button>}
             {folderId !== null && <button onClick={deleteFolder}><Trash2 size={16} /> Удалить</button>}
-            {user?.role === "tech_admin" && folderId !== null && Boolean(currentFolder?.item_count) && (
-              <button className="danger-button" onClick={deleteAllStudents} disabled={deletingStudents}>
+            {user?.role === "tech_admin" && folderId !== null && (
+              <button className="danger-button" onClick={deleteAllStudents} disabled={deletingStudents || !apps.length}>
                 <UserMinus size={16} /> {deletingStudents ? "Удаление..." : "Удалить всех студентов"}
               </button>
             )}
@@ -599,7 +602,126 @@ export function FileManagerPage() {
   );
 }
 
-type DetailsTab = "main" | "admissions" | "education" | "student";
+export function ContestPage() {
+  const { token } = useAuth();
+  const navigate = useNavigate();
+  const [entries, setEntries] = useState<ContestEntry[]>([]);
+  const [selectedPath, setSelectedPath] = useState<[string, string, string] | null>(null);
+  const [error, setError] = useState("");
+
+  const load = async () => {
+    if (!token) return;
+    try {
+      const items = await apiFetch<ContestEntry[]>("/contest/entries", { token });
+      setEntries(items);
+      setError("");
+      if (!selectedPath && items[0]) {
+        setSelectedPath([items[0].base_class, items[0].qualification, items[0].specialty]);
+      }
+    } catch (err) {
+      setError(apiMessage(err));
+    }
+  };
+
+  useEffect(() => { void load(); }, [token]);
+
+  const tree = useMemo(() => {
+    const result: Record<string, Record<string, string[]>> = {};
+    entries.forEach((entry) => {
+      result[entry.base_class] ??= {};
+      result[entry.base_class][entry.qualification] ??= [];
+      if (!result[entry.base_class][entry.qualification].includes(entry.specialty)) {
+        result[entry.base_class][entry.qualification].push(entry.specialty);
+      }
+    });
+    return result;
+  }, [entries]);
+
+  const visibleEntries = selectedPath
+    ? entries.filter((entry) => (
+        entry.base_class === selectedPath[0]
+        && entry.qualification === selectedPath[1]
+        && entry.specialty === selectedPath[2]
+      ))
+    : [];
+
+  return (
+    <section className="file-manager contest-manager">
+      <aside className="folder-pane">
+        <div className="pane-header"><h2>Конкурс</h2></div>
+        <div className="folder-tree">
+          {Object.entries(tree).map(([baseClass, qualifications]) => (
+            <div key={baseClass}>
+              <div className="folder-node contest-level"><FolderIcon size={15} /><strong>{baseClass}</strong></div>
+              {Object.entries(qualifications).map(([qualification, specialties]) => (
+                <div key={`${baseClass}-${qualification}`}>
+                  <div className="folder-node contest-level" style={{ paddingLeft: 28 }}>
+                    <ChevronRight size={14} /><span>{qualification}</span>
+                  </div>
+                  {specialties.sort((left, right) => left.localeCompare(right, "ru")).map((specialty) => {
+                    const path: [string, string, string] = [baseClass, qualification, specialty];
+                    const active = selectedPath?.join("|") === path.join("|");
+                    const count = entries.filter((entry) => (
+                      entry.base_class === baseClass
+                      && entry.qualification === qualification
+                      && entry.specialty === specialty
+                    )).length;
+                    return (
+                      <button
+                        key={`${baseClass}-${qualification}-${specialty}`}
+                        className={active ? "folder-node active" : "folder-node"}
+                        style={{ paddingLeft: 48 }}
+                        onClick={() => setSelectedPath(path)}
+                      >
+                        <FolderIcon size={14} />
+                        <span>{specialty}</span>
+                        <small>{count}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          ))}
+          {!entries.length && <span className="muted">На конкурсе пока никого нет.</span>}
+        </div>
+      </aside>
+      <main className="file-pane">
+        <div className="pane-header">
+          <div>
+            <p className="eyebrow">Конкурсный реестр</p>
+            <h2>{selectedPath?.[2] ?? "Выберите специальность"}</h2>
+            {selectedPath && <span className="muted">{selectedPath[0]} / {selectedPath[1]}</span>}
+          </div>
+          <button className="secondary-button" onClick={load}><RefreshCw size={16} /> Обновить</button>
+        </div>
+        {error && <div className="form-error">{error}</div>}
+        <div className="file-grid">
+          {visibleEntries.map((entry) => (
+            <article
+              key={entry.choice_id}
+              className="file-card"
+              onDoubleClick={() => navigate(`/admin/applications/${entry.application_id}?contestChoice=${entry.choice_id}`)}
+            >
+              <h3>{entry.full_name}</h3>
+              <p>{entry.iin}</p>
+              <StatusBadge status="in_contest" />
+              <button
+                className="secondary-button"
+                onClick={() => navigate(`/admin/applications/${entry.application_id}?contestChoice=${entry.choice_id}`)}
+              >
+                Открыть
+              </button>
+            </article>
+          ))}
+        </div>
+        {selectedPath && !visibleEntries.length && <EmptyState title="Нет анкет" text="В этой конкурсной папке нет заявок." />}
+      </main>
+    </section>
+  );
+}
+
+type DetailsTab = "main" | "contest" | "admissions" | "education" | "student";
 type RootEditableField = "iin" | "birth_date" | "full_name" | "email" | "phone";
 type AdmissionEditableField =
   | "benefit_group"
@@ -607,6 +729,15 @@ type AdmissionEditableField =
   | "base_class"
   | "qualification"
   | "specialty"
+  | "enrollment_type"
+  | "locality_type"
+  | "instruction_language"
+  | "study_form"
+  | "needs_dormitory";
+type ContestEditableField =
+  | "benefit_group"
+  | "residence_address"
+  | "base_class"
   | "enrollment_type"
   | "locality_type"
   | "instruction_language"
@@ -627,6 +758,7 @@ export function ApplicationDetailsPage() {
   const { token, user } = useAuth();
   const { applicationId } = useParams();
   const location = useLocation();
+  const navigate = useNavigate();
   const [app, setApp] = useState<Application | null>(null);
   const [teachers, setTeachers] = useState<User[]>([]);
   const [specialties, setSpecialties] = useState<Specialty[]>([]);
@@ -635,6 +767,7 @@ export function ApplicationDetailsPage() {
   const [activeTab, setActiveTab] = useState<DetailsTab>("main");
   const [dirtyRootFields, setDirtyRootFields] = useState<RootEditableField[]>([]);
   const [dirtyAdmissionFields, setDirtyAdmissionFields] = useState<AdmissionEditableField[]>([]);
+  const [contestSpecialtyIds, setContestSpecialtyIds] = useState<number[]>([]);
   const [dirtyEducationFields, setDirtyEducationFields] = useState<EducationEditableField[]>([]);
   const [showExpulsion, setShowExpulsion] = useState(false);
   const [expulsion, setExpulsion] = useState({
@@ -655,6 +788,7 @@ export function ApplicationDetailsPage() {
     if (!token || !applicationId) return;
     const item = await apiFetch<Application>(`/admin/applications/${applicationId}`, { token });
     setApp(item);
+    setContestSpecialtyIds(item.contest_choices.map((choice) => choice.specialty_id));
     const users = await apiFetch<User[]>("/users?role=teacher", { token }).catch(() => []);
     setTeachers(users);
     const info = await apiFetch<{ specialties: Specialty[] }>("/public/college-info").catch(() => ({ specialties: [] }));
@@ -663,7 +797,7 @@ export function ApplicationDetailsPage() {
 
   useEffect(() => { void load(); }, [token, applicationId]);
   useEffect(() => {
-    setActiveTab("main");
+    setActiveTab(new URLSearchParams(location.search).has("contestChoice") ? "contest" : "main");
     setDirtyRootFields([]);
     setDirtyAdmissionFields([]);
     setDirtyEducationFields([]);
@@ -688,6 +822,35 @@ export function ApplicationDetailsPage() {
       }
     } : current);
     setDirtyAdmissionFields((current) => current.includes(field) ? current : [...current, field]);
+  };
+
+  const updateContest = (field: ContestEditableField, value: string | boolean | null) => {
+    setApp((current) => current ? {
+      ...current,
+      contest_profile: {
+        id: current.contest_profile?.id ?? 0,
+        enrollment_type: "general",
+        locality_type: "urban",
+        study_form: "full_time",
+        needs_dormitory: false,
+        ...current.contest_profile,
+        [field]: value,
+      }
+    } : current);
+  };
+
+  const addContestSpecialty = () => {
+    if (contestSpecialtyIds.length >= 4) return;
+    const next = specialties.find((item) => !contestSpecialtyIds.includes(item.id));
+    if (next) setContestSpecialtyIds((current) => [...current, next.id]);
+  };
+
+  const updateContestSpecialty = (index: number, specialtyId: number) => {
+    setContestSpecialtyIds((current) => current.map((item, itemIndex) => itemIndex === index ? specialtyId : item));
+  };
+
+  const removeContestSpecialty = (index: number) => {
+    setContestSpecialtyIds((current) => current.filter((_, itemIndex) => itemIndex !== index));
   };
 
   const updateEducation = (field: EducationEditableField, value: string | boolean | number | null) => {
@@ -772,6 +935,62 @@ export function ApplicationDetailsPage() {
         setApp(updated);
       }
       setSaved(isBulkMode ? `Сохранено для ${bulkApplicationIds.length} студентов` : "Сохранено");
+    } catch (err) {
+      setError(apiMessage(err));
+    }
+  };
+
+  const saveContest = async (submit = false) => {
+    if (!token || !app) return;
+    setError("");
+    setSaved("");
+    try {
+      const profile = app.contest_profile;
+      const payload = {
+        benefit_group: profile?.benefit_group ?? null,
+        residence_address: profile?.residence_address ?? null,
+        base_class: profile?.base_class ?? null,
+        enrollment_type: profile?.enrollment_type ?? "general",
+        locality_type: profile?.locality_type ?? "urban",
+        instruction_language: profile?.instruction_language ?? null,
+        study_form: profile?.study_form ?? "full_time",
+        needs_dormitory: profile?.needs_dormitory ?? false,
+        specialty_ids: contestSpecialtyIds,
+      };
+      const updated = await apiFetch<Application>(
+        `/contest/applications/${app.id}${submit ? "/submit" : ""}`,
+        { method: submit ? "POST" : "PATCH", token, body: JSON.stringify(payload) }
+      );
+      setApp(updated);
+      setContestSpecialtyIds(updated.contest_choices.map((choice) => choice.specialty_id));
+      setSaved(submit ? "Заявка отправлена на конкурс" : "Конкурсные данные сохранены");
+    } catch (err) {
+      setError(apiMessage(err));
+    }
+  };
+
+  const decideContestChoice = async (decision: "accept" | "reject") => {
+    if (!token || !app) return;
+    const queryChoiceId = Number(new URLSearchParams(location.search).get("contestChoice"));
+    const choiceId = queryChoiceId || app.contest_choices.find((choice) => choice.status === "active")?.id;
+    if (!choiceId) {
+      setError("Не выбрана конкурсная специальность");
+      return;
+    }
+    const selectedChoice = app.contest_choices.find((choice) => choice.id === choiceId);
+    const prompt = decision === "accept"
+      ? `Принять ${app.full_name} по специальности «${selectedChoice?.specialty.name ?? ""}»?`
+      : `Отклонить конкурсную заявку по специальности «${selectedChoice?.specialty.name ?? ""}»?`;
+    if (!window.confirm(prompt)) return;
+    setError("");
+    try {
+      await apiFetch(`/contest/choices/${choiceId}/${decision}`, { method: "POST", token });
+      if (decision === "reject") {
+        navigate("/admin/contest");
+      } else {
+        await load();
+        setSaved("Студент принят из конкурса");
+      }
     } catch (err) {
       setError(apiMessage(err));
     }
@@ -873,6 +1092,21 @@ export function ApplicationDetailsPage() {
     }
   };
 
+  const graduateStudent = async () => {
+    if (!token || !app || !window.confirm(`Перевести ${app.full_name} в статус «Выпускник»?`)) return;
+    setError("");
+    try {
+      const updated = await apiFetch<Application>(`/education/applications/${app.id}/graduate`, {
+        method: "POST",
+        token,
+      });
+      setApp(updated);
+      setSaved("Студент переведен в выпускники");
+    } catch (err) {
+      setError(apiMessage(err));
+    }
+  };
+
   const downloadPdf = async () => {
     if (!token || !app) return;
     setError("");
@@ -900,11 +1134,28 @@ export function ApplicationDetailsPage() {
   const isTeacher = user?.role === "teacher";
   const canAdmissions = user?.role === "admissions_admin" || user?.role === "tech_admin";
   const canEducation = user?.role === "education_admin" || user?.role === "tech_admin";
+  const canContestDecision = canAdmissions || user?.role === "education_admin";
   const canEditRoot = canAdmissions || isTeacher;
   const canUseAdmissionsActions = canAdmissions && admissionsActionableStatuses.has(app.status);
   const canCompleteEducation = canEducation && educationCompletableStatuses.has(app.status);
   const canExpel = canEducation && ["completed", "enrolled"].includes(app.status);
-  const hasStudentSheet = ["completed", "enrolled", "expelled"].includes(app.status);
+  const canGraduate = canEducation && ["completed", "enrolled"].includes(app.status);
+  const hasStudentSheet = ["completed", "enrolled", "expelled", "graduated"].includes(app.status);
+  const showContestTab = !isTeacher && (
+    app.contest_visible
+    || ["new", "in_admissions_review", "in_contest"].includes(app.status)
+  );
+  const showAdmissionsTab = !isTeacher && Boolean(
+    app.admission_details?.specialty
+    || ["accepted_by_admissions", "education_review", "enrolled", "completed", "expelled", "graduated"].includes(app.status)
+  );
+  const selectedContestChoiceId = Number(new URLSearchParams(location.search).get("contestChoice"));
+  const selectedContestChoice = app.contest_choices.find((choice) => choice.id === selectedContestChoiceId)
+    ?? app.contest_choices.find((choice) => choice.status === "accepted")
+    ?? app.contest_choices[0];
+  const visibleContestSpecialtyIds = selectedContestChoiceId && selectedContestChoice
+    ? [selectedContestChoice.specialty_id]
+    : contestSpecialtyIds;
   const groupedSpecialties = Object.entries(
     specialties.reduce<Record<string, Specialty[]>>((groups, specialty) => {
       const qualification = specialty.qualification;
@@ -936,7 +1187,8 @@ export function ApplicationDetailsPage() {
   const performanceLabel = performanceLabels[app.education_details?.academic_performance ?? ""] ?? "Нет данных";
   const tabs: { id: DetailsTab; label: string }[] = [
     { id: "main", label: "Основные данные" },
-    ...(!isTeacher ? [{ id: "admissions" as DetailsTab, label: "Приемная комиссия" }] : []),
+    ...(showContestTab ? [{ id: "contest" as DetailsTab, label: "Конкурс" }] : []),
+    ...(showAdmissionsTab ? [{ id: "admissions" as DetailsTab, label: "Приемная комиссия" }] : []),
     ...(canEducation ? [{ id: "education" as DetailsTab, label: "Учебная часть" }] : []),
     ...(hasStudentSheet ? [{ id: "student" as DetailsTab, label: "Данные студента" }] : []),
   ];
@@ -985,6 +1237,113 @@ export function ApplicationDetailsPage() {
             <label><span>Email</span><input disabled={!canEditRoot} value={app.email} onChange={(e) => updateRoot("email", e.target.value)} /></label>
             <label><span>Телефон</span><input disabled={!canEditRoot} value={app.phone} onChange={(e) => updateRoot("phone", e.target.value)} /></label>
             {canEditRoot && <button type="button" className="primary-button" onClick={saveApplication}><Save size={16} /> Сохранить</button>}
+          </form>
+        )}
+
+        {activeTab === "contest" && showContestTab && (
+          <form className="panel-form tab-panel">
+            {selectedContestChoice && (
+              <div className="contest-context">
+                <strong>Текущая конкурсная специальность</strong>
+                <span>{selectedContestChoice.specialty.name}</span>
+                <small>{selectedContestChoice.specialty.qualification}</small>
+              </div>
+            )}
+            <label><span>Льготная группа</span><input disabled={!canAdmissions} value={app.contest_profile?.benefit_group ?? ""} onChange={(e) => updateContest("benefit_group", e.target.value)} /></label>
+            <label><span>Место жительства</span><input disabled={!canAdmissions} value={app.contest_profile?.residence_address ?? ""} onChange={(e) => updateContest("residence_address", e.target.value)} /></label>
+            <label><span>База поступления</span><input disabled={!canAdmissions} value={app.contest_profile?.base_class ?? ""} onChange={(e) => updateContest("base_class", e.target.value)} placeholder="9 класс / 11 класс" /></label>
+            <label>
+              <span>Вид зачисления</span>
+              <select disabled={!canAdmissions} value={app.contest_profile?.enrollment_type ?? "general"} onChange={(e) => updateContest("enrollment_type", e.target.value)}>
+                <option value="general">На общих основаниях</option>
+                <option value="reinstated">Как восстановившийся</option>
+                <option value="transfer">По переводу</option>
+              </select>
+            </label>
+            <label>
+              <span>Тип местности проживания</span>
+              <select disabled={!canAdmissions} value={app.contest_profile?.locality_type ?? "urban"} onChange={(e) => updateContest("locality_type", e.target.value)}>
+                <option value="urban">Городская местность</option>
+                <option value="rural">Сельская местность</option>
+              </select>
+            </label>
+            <label>
+              <span>Язык обучения</span>
+              <select disabled={!canAdmissions} value={app.contest_profile?.instruction_language ?? ""} onChange={(e) => updateContest("instruction_language", e.target.value || null)}>
+                <option value="">Не выбран</option>
+                <option value="russian">Русский</option>
+                <option value="kazakh">Казахский</option>
+              </select>
+            </label>
+            <label>
+              <span>Форма обучения</span>
+              <select disabled={!canAdmissions} value={app.contest_profile?.study_form ?? "full_time"} onChange={(e) => updateContest("study_form", e.target.value)}>
+                <option value="full_time">Очная</option>
+                <option value="part_time">Заочная</option>
+              </select>
+            </label>
+            <label>
+              <span>Общежитие</span>
+              <select disabled={!canAdmissions} value={app.contest_profile?.needs_dormitory ? "yes" : "no"} onChange={(e) => updateContest("needs_dormitory", e.target.value === "yes")}>
+                <option value="no">Не нужно</option>
+                <option value="yes">Нужно</option>
+              </select>
+            </label>
+            <div className="contest-specialties">
+              <div className="pane-header">
+                <div>
+                  <strong>Специальности</strong>
+                  <small>От 1 до 4 направлений</small>
+                </div>
+                {canAdmissions && !selectedContestChoiceId && contestSpecialtyIds.length < 4 && (
+                  <button type="button" onClick={addContestSpecialty}><Plus size={16} /> Специальность</button>
+                )}
+              </div>
+              {visibleContestSpecialtyIds.map((specialtyId) => {
+                const index = contestSpecialtyIds.indexOf(specialtyId);
+                const specialty = specialties.find((item) => item.id === specialtyId);
+                return (
+                  <div className="contest-specialty-row" key={`${specialtyId}-${index}`}>
+                    <select
+                      disabled={!canAdmissions}
+                      value={specialtyId}
+                      onChange={(event) => updateContestSpecialty(index, Number(event.target.value))}
+                    >
+                      {groupedSpecialties.map(([qualification, items]) => (
+                        <optgroup key={qualification} label={qualification}>
+                          {items.map((item) => (
+                            <option
+                              key={item.id}
+                              value={item.id}
+                              disabled={contestSpecialtyIds.some((selectedId, selectedIndex) => selectedIndex !== index && selectedId === item.id)}
+                            >
+                              {item.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                    <span>{specialty?.qualification ?? "Квалификация не найдена"}</span>
+                    {canAdmissions && !selectedContestChoiceId && <button type="button" onClick={() => removeContestSpecialty(index)}><X size={15} /></button>}
+                  </div>
+                );
+              })}
+              {!contestSpecialtyIds.length && <span className="muted">Добавьте хотя бы одну специальность.</span>}
+            </div>
+            <div className="action-row">
+              {canAdmissions && ["new", "in_admissions_review", "in_contest"].includes(app.status) && (
+                <>
+                  <button type="button" onClick={() => saveContest(false)}><Save size={16} /> Сохранить</button>
+                  <button type="button" className="primary-button" onClick={() => saveContest(true)}><Check size={16} /> Отправить на конкурс</button>
+                </>
+              )}
+              {canContestDecision && app.status === "in_contest" && selectedContestChoice && (
+                <>
+                  <button type="button" className="primary-button" onClick={() => decideContestChoice("accept")}><Check size={16} /> Принять из конкурса</button>
+                  <button type="button" onClick={() => decideContestChoice("reject")}><X size={16} /> Отклонить направление</button>
+                </>
+              )}
+            </div>
           </form>
         )}
 
@@ -1051,7 +1410,6 @@ export function ApplicationDetailsPage() {
                 <button type="button" onClick={() => saveApplication()}><Save size={16} /> Сохранить</button>
                 {canUseAdmissionsActions && <button type="button" onClick={() => action("archive")}><Archive size={16} /> Архивировать</button>}
                 {canUseAdmissionsActions && <button type="button" onClick={() => action("reject")}><X size={16} /> Отклонить</button>}
-                {canUseAdmissionsActions && <button type="button" onClick={() => action("accept")}><Check size={16} /> Принять</button>}
               </div>
             )}
           </form>
@@ -1102,6 +1460,7 @@ export function ApplicationDetailsPage() {
               <button type="button" onClick={() => saveEducation(false)}><Save size={16} /> Сохранить</button>
               {canCompleteEducation && <button type="button" className="primary-button" onClick={() => saveEducation(true)}><Check size={16} /> Оформить</button>}
               {canExpel && <button type="button" onClick={() => setShowExpulsion(true)}><UserMinus size={16} /> Отчислить</button>}
+              {canGraduate && <button type="button" onClick={graduateStudent}><GraduationCap size={16} /> Выпускник</button>}
             </div>
           </form>
         )}
@@ -1163,15 +1522,19 @@ export function ApplicationDetailsPage() {
 }
 
 export function ChatsPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { chatId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
   const [chats, setChats] = useState<Chat[]>([]);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [text, setText] = useState("");
+  const [file, setFile] = useState<File | null>(null);
+  const [error, setError] = useState("");
+  const [uploading, setUploading] = useState(false);
   const base = location.pathname.startsWith("/assistant") ? "/assistant/chats" : "/admin/chats";
   const activeId = chatId ? Number(chatId) : chats[0]?.id;
+  const canUseChatFiles = ["tech_admin", "admissions_admin", "assistant"].includes(user?.role ?? "");
 
   const loadChats = async () => {
     if (!token) return;
@@ -1191,10 +1554,49 @@ export function ChatsPage() {
 
   const send = async (event: FormEvent) => {
     event.preventDefault();
-    if (!token || !activeId || !text.trim()) return;
-    await apiFetch(`/admin/chats/${activeId}/messages`, { method: "POST", token, body: JSON.stringify({ message: text.trim() }) });
-    setText("");
-    await loadMessages();
+    if (!token || !activeId || (!text.trim() && !file)) return;
+    setError("");
+    setUploading(true);
+    try {
+      if (file) {
+        const form = new FormData();
+        form.append("file", file);
+        form.append("message", text.trim());
+        await apiFetch(`/admin/chats/${activeId}/attachments`, { method: "POST", token, body: form });
+      } else {
+        await apiFetch(`/admin/chats/${activeId}/messages`, { method: "POST", token, body: JSON.stringify({ message: text.trim() }) });
+      }
+      setText("");
+      setFile(null);
+      await loadMessages();
+      await loadChats();
+    } catch (err) {
+      setError(apiMessage(err));
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const loadAttachment = async (attachment: ChatMessage["attachments"][number]) => {
+    const response = await fetch(`${API_URL}/admin/chats/attachments/${attachment.id}`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!response.ok) throw new Error("Не удалось загрузить файл");
+    return response.blob();
+  };
+
+  const deleteActiveChat = async () => {
+    if (!token || !activeId || !window.confirm("Удалить чат и все отправленные документы с сервера?")) return;
+    try {
+      await apiFetch(`/admin/chats/${activeId}`, { method: "DELETE", token });
+      const remaining = chats.filter((chat) => chat.id !== activeId);
+      setMessages([]);
+      setChats(remaining);
+      navigate(remaining[0] ? `${base}/${remaining[0].id}` : base, { replace: true });
+      await loadChats();
+    } catch (err) {
+      setError(apiMessage(err));
+    }
   };
 
   return (
@@ -1212,18 +1614,36 @@ export function ChatsPage() {
       <main className="chat-thread">
         <div className="thread-header">
           <h2>{chats.find((chat) => chat.id === activeId)?.application?.full_name ?? "Чат"}</h2>
+          {user?.role === "tech_admin" && activeId && (
+            <button className="danger-button" onClick={deleteActiveChat}><Trash2 size={16} /> Удалить чат</button>
+          )}
         </div>
+        {error && <div className="form-error">{error}</div>}
         <div className="chat-messages admin">
           {messages.map((message) => (
             <div key={message.id} className={`message-bubble ${message.sender_type === "applicant" ? "mine" : "staff"}`}>
               <span>{message.sender_type === "applicant" ? "Абитуриент" : roleLabels[message.sender_type as keyof typeof roleLabels] ?? "Сотрудник"}</span>
               <p>{message.message}</p>
+              {canUseChatFiles
+                ? <ChatAttachments attachments={message.attachments ?? []} loadAttachment={loadAttachment} />
+                : Boolean(message.attachments?.length) && <small>Документ доступен приемной комиссии и помощникам.</small>}
             </div>
           ))}
         </div>
         <form className="chat-input" onSubmit={send}>
           <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Ответить..." />
-          <button className="primary-button">Отправить</button>
+          {canUseChatFiles && (
+            <label className="attachment-picker" title="Прикрепить документ">
+              <Paperclip size={18} />
+              <input
+                type="file"
+                accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx"
+                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              />
+            </label>
+          )}
+          <button className="primary-button" disabled={uploading}>{uploading ? "Отправка..." : "Отправить"}</button>
+          {file && <span className="selected-file">{file.name} <button type="button" onClick={() => setFile(null)}><X size={14} /></button></span>}
         </form>
       </main>
     </section>
