@@ -5,6 +5,12 @@ import { API_URL, apiFetch, apiMessage, ChatMessage, CollegeInfo, Specialty } fr
 import { ChatAttachments } from "../../components/ChatAttachments";
 import { SiteFooter } from "../../components/Layout";
 
+const facilityImages = [
+  "/images/computer-classroom.webp",
+  "/images/study-classroom.webp",
+  "/images/material-resources.webp",
+];
+
 function iinIsValid(iin: string, birthDate: string) {
   if (!/^\d{12}$/.test(iin) || !birthDate) return false;
   const [year, month, day] = birthDate.split("-");
@@ -50,8 +56,12 @@ export function HomePage() {
           </div>
         </div>
         <div className="hero-panel">
-          <div className="hero-photo photo-one" />
-          <div className="hero-photo photo-two" />
+          <div className="hero-photo photo-one">
+            <img src="/images/college-building.webp" alt="Здание Колледжа экономики и техники" />
+          </div>
+          <div className="hero-photo photo-two">
+            <img src="/images/college-entrance-winter.webp" alt="Главный вход в Колледж экономики и техники" />
+          </div>
           <div className="hero-stat">
             <Sparkles size={22} />
             <strong>Digital admissions</strong>
@@ -116,7 +126,9 @@ export function HomePage() {
           <div className="facility-grid">
             {(info?.facilities ?? []).map((item, index) => (
               <article className="facility-card" key={item.title}>
-                <div className={`facility-image facility-${index}`} />
+                <div className={`facility-image facility-${index}`}>
+                  <img src={facilityImages[index]} alt={item.title} loading="lazy" />
+                </div>
                 <h3>{item.title}</h3>
                 <p>{item.text}</p>
               </article>

@@ -221,13 +221,18 @@ button {
 
 .hero-photo,
 .facility-image {
+  overflow: hidden;
   border-radius: 8px;
   background-color: #d9edf9;
-  background-image:
-    linear-gradient(135deg, rgba(255, 255, 255, 0.58), rgba(255, 255, 255, 0)),
-    repeating-linear-gradient(90deg, rgba(23, 106, 167, 0.16) 0 1px, transparent 1px 24px),
-    repeating-linear-gradient(0deg, rgba(244, 200, 74, 0.22) 0 1px, transparent 1px 30px);
   box-shadow: var(--shadow);
+}
+
+.hero-photo img,
+.facility-image img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
 }
 
 .photo-one {
@@ -238,6 +243,10 @@ button {
   min-height: 330px;
   margin-top: 78px;
   background-color: #edf9ff;
+}
+
+.photo-two img {
+  object-position: center 70%;
 }
 
 .hero-stat {
@@ -412,12 +421,28 @@ button {
   margin-bottom: 14px;
 }
 
+.facility-0 {
+  background-color: #d9edf9;
+}
+
+.facility-0 img {
+  object-position: center 48%;
+}
+
 .facility-1 {
   background-color: #f5fbff;
 }
 
+.facility-1 img {
+  object-position: center 52%;
+}
+
 .facility-2 {
   background-color: #eef8f2;
+}
+
+.facility-2 img {
+  object-position: center 50%;
 }
 
 .faq-section {
