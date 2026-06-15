@@ -5,10 +5,22 @@ import { API_URL, apiFetch, apiMessage, ChatMessage, CollegeInfo, Specialty } fr
 import { ChatAttachments } from "../../components/ChatAttachments";
 import { SiteFooter } from "../../components/Layout";
 
-const facilityImages = [
-  "/images/computer-classroom.webp",
-  "/images/study-classroom.webp",
-  "/images/material-resources.webp",
+const defaultFacilities = [
+  {
+    title: "Компьютерные аудитории",
+    text: "Рабочие места для программирования, проектной работы и практики.",
+    image: "/images/computer-classroom.webp",
+  },
+  {
+    title: "Учебные кабинеты",
+    text: "Светлые аудитории для лекций, семинаров и командной работы.",
+    image: "/images/study-classroom.webp",
+  },
+  {
+    title: "Материально-техническая база",
+    text: "Оборудование и цифровые сервисы для современных специальностей.",
+    image: "/images/material-resources.webp",
+  },
 ];
 
 function iinIsValid(iin: string, birthDate: string) {
@@ -25,6 +37,9 @@ export function HomePage() {
   }, []);
 
   const specialties = info?.specialties ?? [];
+  const facilities = info?.facilities?.length
+    ? info.facilities.map((item, index) => ({ ...item, image: defaultFacilities[index]?.image }))
+    : defaultFacilities;
 
   return (
     <div className="public-page">
@@ -124,10 +139,10 @@ export function HomePage() {
             <h2>Аудитории и материально-техническая база</h2>
           </div>
           <div className="facility-grid">
-            {(info?.facilities ?? []).map((item, index) => (
+            {facilities.map((item, index) => (
               <article className="facility-card" key={item.title}>
                 <div className={`facility-image facility-${index}`}>
-                  <img src={facilityImages[index]} alt={item.title} loading="lazy" />
+                  <img src={item.image} alt={item.title} loading="lazy" />
                 </div>
                 <h3>{item.title}</h3>
                 <p>{item.text}</p>
