@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: cet-admissions-api
+    name: cet-register
     runtime: docker
     plan: free
     healthCheckPath: /health
@@ -18,19 +18,19 @@ services:
       - key: ACCESS_TOKEN_EXPIRE_MINUTES
         value: 720
       - key: CORS_ORIGINS
-        value: https://cet-admissions-web.onrender.com
+        value: https://cet-nyzd.onrender.com
       - key: ENVIRONMENT
         value: production
 
   - type: web
-    name: cet-admissions-web
+    name: cet-nyzd
     runtime: static
     rootDir: frontend
     buildCommand: npm install && npm run build
     staticPublishPath: ./dist
     envVars:
       - key: VITE_API_URL
-        value: https://cet-admissions-api.onrender.com
+        value: https://cet-register.onrender.com
     routes:
       - type: rewrite
         source: /*
