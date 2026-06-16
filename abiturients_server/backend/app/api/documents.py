@@ -219,7 +219,6 @@ def download_application_pdf(
         [
             ("Группа", education.group_number if education else None),
             ("Курс", education.course if education else None),
-            ("Код специальности НОБД", education.nobd_specialty_code if education else None),
             (
                 "Срок обучения",
                 f"{education.study_duration_years} г."

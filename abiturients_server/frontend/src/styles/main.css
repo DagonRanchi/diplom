@@ -919,6 +919,19 @@ dd.empty-field {
   gap: 14px;
 }
 
+.details-heading-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.load-more-button {
+  justify-self: center;
+  margin: 12px auto 0;
+}
+
 .metric-grid article {
   padding: 18px;
 }
@@ -1555,6 +1568,7 @@ td span {
 
 .chat-list {
   align-content: start;
+  grid-template-rows: auto auto minmax(0, 1fr);
 }
 
 .chat-list button span {
@@ -1563,8 +1577,33 @@ td span {
   white-space: nowrap;
 }
 
+.chat-items {
+  min-height: 0;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  overflow: auto;
+}
+
+.chat-items .load-more-button {
+  width: auto;
+  min-height: 38px;
+  padding: 0 14px;
+  background: var(--blue-100);
+  color: var(--blue-900);
+}
+
+.chat-search-box input {
+  min-width: 0;
+}
+
 .chat-messages.admin {
   min-height: calc(100vh - 260px);
+}
+
+.chat-messages.admin .load-more-button {
+  margin-top: 0;
+  margin-bottom: 8px;
 }
 
 .inline-form input,

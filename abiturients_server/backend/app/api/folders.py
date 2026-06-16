@@ -1,6 +1,9 @@
+from collections import defaultdict
+from functools import lru_cache
+
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy import delete, select
-from sqlalchemy.orm import Session, selectinload
+from sqlalchemy import delete, func, select
+from sqlalchemy.orm import Session
 
 from app.core.rbac import get_current_user
 from app.db.session import get_db
@@ -31,7 +34,40 @@ def is_groups_root(folder: Folder | None) -> bool:
     return bool(folder and folder.name == "Группы" and folder.parent_id is None)
 
 
-def node_from_folder(folder: Folder) -> FolderTreeNode:
+def folder_item_totals(db: Session) -> dict[int, int]:
+    rows = db.execute(select(Folder.id, Folder.parent_id)).all()
+    direct_counts = dict(
+        db.execute(
+            select(FolderItem.folder_id, func.count(FolderItem.id))
+            .group_by(FolderItem.folder_id)
+        ).all()
+    )
+    children_by_parent: dict[int | None, list[int]] = defaultdict(list)
+    for folder_id, parent_id in rows:
+        children_by_parent[parent_id].append(folder_id)
+
+    @lru_cache(maxsize=None)
+    def total_for(folder_id: int) -> int:
+        return int(direct_counts.get(folder_id, 0)) + sum(total_for(child_id) for child_id in children_by_parent[folder_id])
+
+    return {folder_id: total_for(folder_id) for folder_id, _ in rows}
+
+
+def build_folder_tree(folders: list[Folder], item_counts: dict[int, int], parent_id: int | None = None) -> list[FolderTreeNode]:
+    children_by_parent: dict[int | None, list[Folder]] = defaultdict(list)
+    for folder in folders:
+        children_by_parent[folder.parent_id].append(folder)
+
+    def build(current_parent_id: int | None) -> list[FolderTreeNode]:
+        nodes = []
+        for folder in sorted(children_by_parent[current_parent_id], key=lambda item: item.name):
+            nodes.append(node_from_folder(folder, item_counts, build(folder.id)))
+        return nodes
+
+    return build(parent_id)
+
+
+def node_from_folder(folder: Folder, item_counts: dict[int, int], children: list[FolderTreeNode] | None = None) -> FolderTreeNode:
     return FolderTreeNode(
         id=folder.id,
         name=folder.name,
@@ -40,8 +76,8 @@ def node_from_folder(folder: Folder) -> FolderTreeNode:
         role_scope=folder.role_scope,
         created_at=folder.created_at,
         updated_at=folder.updated_at,
-        item_count=len(folder.items),
-        children=[node_from_folder(child) for child in sorted(folder.children, key=lambda item: item.name)],
+        item_count=item_counts.get(folder.id, 0),
+        children=children or [],
     )
 
 
@@ -64,17 +100,8 @@ def sync_application_group(db: Session, application_id: int, folder: Folder) -> 
 def folder_tree(user: User = Depends(get_current_user), db: Session = Depends(get_db)) -> list[FolderTreeNode]:
     if user.role == Role.assistant.value:
         return []
-    folders = (
-        db.scalars(
-            select(Folder)
-            .where(Folder.parent_id.is_(None))
-            .options(selectinload(Folder.children).selectinload(Folder.children), selectinload(Folder.items))
-            .order_by(Folder.name)
-        )
-        .unique()
-        .all()
-    )
-    return [node_from_folder(folder) for folder in folders]
+    folders = list(db.scalars(select(Folder)).all())
+    return build_folder_tree(folders, folder_item_totals(db))
 
 
 @router.post("", response_model=FolderRead, status_code=status.HTTP_201_CREATED)

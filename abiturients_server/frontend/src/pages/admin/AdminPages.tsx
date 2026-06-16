@@ -27,11 +27,13 @@ import {
   AcademicYearTransition,
   Application,
   Chat,
+  ChatListItem,
   ChatMessage,
   ContingentImport,
   ContestEntry,
   FolderNode,
   GroupFolder,
+  PaginatedResponse,
   roleLabels,
   Specialty,
   statusLabels,
@@ -44,6 +46,8 @@ import { useAuth } from "../../context/AuthContext";
 const statusOptions = Object.keys(statusLabels);
 const admissionsActionableStatuses = new Set(["new", "in_admissions_review"]);
 const educationCompletableStatuses = new Set(["accepted_by_admissions", "education_review"]);
+const FOLDER_PAGE_SIZE = 50;
+const CHAT_PAGE_SIZE = 20;
 
 function formatDate(value: string) {
   return new Intl.DateTimeFormat("ru-RU").format(new Date(value));
@@ -364,12 +368,14 @@ export function LoginPage() {
 export function DashboardPage() {
   const { token, user } = useAuth();
   const [apps, setApps] = useState<Application[]>([]);
-  const [chats, setChats] = useState<Chat[]>([]);
+  const [chatCount, setChatCount] = useState(0);
 
   useEffect(() => {
     if (!token) return;
     void apiFetch<Application[]>("/admin/applications?limit=500", { token }).then(setApps);
-    void apiFetch<Chat[]>("/admin/chats", { token }).then(setChats).catch(() => setChats([]));
+    void apiFetch<PaginatedResponse<ChatListItem>>("/admin/chats/page?limit=1", { token })
+      .then((page) => setChatCount(page.total))
+      .catch(() => setChatCount(0));
   }, [token]);
 
   const counts = statusOptions.map((status) => ({ status, count: apps.filter((app) => app.status === status).length }));
@@ -388,7 +394,7 @@ export function DashboardPage() {
         <article><strong>{apps.length}</strong><span>Заявок доступно</span></article>
         <article><strong>{apps.filter((app) => app.status === "new").length}</strong><span>Новых</span></article>
         <article><strong>{apps.filter((app) => app.status === "completed").length}</strong><span>Оформленных</span></article>
-        <article><strong>{chats.length}</strong><span>Чатов</span></article>
+        <article><strong>{chatCount}</strong><span>Чатов</span></article>
       </div>
       <div className="status-board">
         {counts.map((item) => (
@@ -556,6 +562,9 @@ export function FileManagerPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [deletingStudents, setDeletingStudents] = useState(false);
+  const [loadingApps, setLoadingApps] = useState(false);
+  const [appsOffset, setAppsOffset] = useState(0);
+  const [hasMoreApps, setHasMoreApps] = useState(false);
   const [draggingIds, setDraggingIds] = useState<number[]>([]);
   const [dropTargetId, setDropTargetId] = useState<number | null>(null);
   const [selectionBox, setSelectionBox] = useState<{ startX: number; startY: number; x: number; y: number } | null>(null);
@@ -572,29 +581,46 @@ export function FileManagerPage() {
     setTree(nodes);
   };
 
-  const loadApps = async (preserveSelection = false) => {
+  const loadApps = async (preserveSelection = false, offset = 0) => {
     if (!token) return;
     if (!folderId && !search.trim()) {
       setApps([]);
       setSelected([]);
+      setAppsOffset(0);
+      setHasMoreApps(false);
       return;
     }
-    const params = new URLSearchParams({ limit: "500" });
+    setLoadingApps(true);
+    const params = new URLSearchParams({ limit: String(FOLDER_PAGE_SIZE), offset: String(offset) });
     if (folderId) {
       params.set("folder_id", String(folderId));
       if (search.trim()) params.set("folder_recursive", "true");
     }
     if (search.trim()) params.set("search", search.trim());
-    const items = await apiFetch<Application[]>(`/admin/applications?${params.toString()}`, { token });
-    setApps(items);
-    setSelected((current) => preserveSelection
-      ? current.filter((id) => items.some((app) => app.id === id))
-      : []);
+    try {
+      const items = await apiFetch<Application[]>(`/admin/applications?${params.toString()}`, { token });
+      const loadedItems = offset > 0
+        ? [...apps, ...items.filter((item) => !apps.some((app) => app.id === item.id))]
+        : items;
+      setApps(loadedItems);
+      setAppsOffset(offset + items.length);
+      setHasMoreApps(items.length === FOLDER_PAGE_SIZE);
+      setSelected((current) => preserveSelection
+        ? current.filter((id) => loadedItems.some((app) => app.id === id))
+        : []);
+    } finally {
+      setLoadingApps(false);
+    }
+  };
+
+  const loadMoreApps = async () => {
+    if (loadingApps || !hasMoreApps) return;
+    await loadApps(true, appsOffset);
   };
 
   useEffect(() => { void loadTree(); }, [token]);
   useEffect(() => {
-    const timer = window.setTimeout(() => { void loadApps(); }, 250);
+    const timer = window.setTimeout(() => { void loadApps(false, 0); }, 250);
     return () => window.clearTimeout(timer);
   }, [token, folderId, search]);
 
@@ -937,10 +963,18 @@ export function FileManagerPage() {
               </article>
             ))}
           </div>
-          {(!search.trim() && !childFolders.length && !apps.length) && (
+          {loadingApps && !apps.length && (
+            <EmptyState title="Загрузка" text="Открываем анкеты в этой папке." />
+          )}
+          {hasMoreApps && (
+            <button type="button" className="secondary-button load-more-button" onClick={loadMoreApps} disabled={loadingApps}>
+              {loadingApps ? "Загрузка..." : "Загрузить еще"}
+            </button>
+          )}
+          {(!loadingApps && !search.trim() && !childFolders.length && !apps.length) && (
             <EmptyState title="Папка пуста" text="Создайте подпапку или переместите сюда анкеты." />
           )}
-          {search.trim() && !apps.length && (
+          {(!loadingApps && search.trim() && !apps.length) && (
             <EmptyState title="Ничего не найдено" text="Проверьте ФИО, ИИН или тег." />
           )}
         </div>
@@ -1775,6 +1809,8 @@ export function ApplicationDetailsPage() {
     satisfactory: "Удовлетворительно",
   };
   const performanceLabel = performanceLabels[app.education_details?.academic_performance ?? ""] ?? "Не выбрано";
+  const staffChatBase = user?.role === "assistant" ? "/assistant/chats" : "/admin/chats";
+  const canOpenStaffChat = Boolean(app.chat_id && user?.role !== "teacher");
   const tabs: { id: DetailsTab; label: string }[] = [
     { id: "main", label: "Основные данные" },
     ...(showContestTab ? [{ id: "contest" as DetailsTab, label: "Конкурс" }] : []),
@@ -1790,7 +1826,14 @@ export function ApplicationDetailsPage() {
           <p className="eyebrow">Анкета #{app.id}</p>
           <h2>{app.full_name}</h2>
         </div>
-        <StatusBadge status={app.status} />
+        <div className="details-heading-actions">
+          <StatusBadge status={app.status} />
+          {canOpenStaffChat && (
+            <button type="button" className="secondary-button" onClick={() => navigate(`${staffChatBase}/${app.chat_id}`)}>
+              <MessageCircle size={16} /> Открыть чат
+            </button>
+          )}
+        </div>
       </div>
       {isBulkMode && (
         <div className="bulk-edit-banner">
@@ -2116,7 +2159,6 @@ export function ApplicationDetailsPage() {
               <div><dt>Форма обучения</dt><dd>{app.admission_details?.study_form === "part_time" ? "Заочная" : "Очная"}</dd></div>
               <div><dt>Общежитие</dt><dd>{app.admission_details?.needs_dormitory ? "Нужно" : "Не нужно"}</dd></div>
               <div><dt>Курс</dt><dd className={emptyFieldClass(app.education_details?.course)}>{app.education_details?.course ?? "Не выбрано"}</dd></div>
-              <div><dt>Код НОБД</dt><dd className={emptyFieldClass(app.education_details?.nobd_specialty_code)}>{app.education_details?.nobd_specialty_code ?? "Не выбрано"}</dd></div>
               <div><dt>Срок обучения</dt><dd className={emptyFieldClass(app.education_details?.study_duration_years)}>{app.education_details?.study_duration_years ? `${app.education_details.study_duration_years} г.` : "Не выбрано"}</dd></div>
               <div><dt>Начало курса</dt><dd className={emptyFieldClass(app.education_details?.course_start_date)}>{app.education_details?.course_start_date ? formatDate(app.education_details.course_start_date) : "Не выбрано"}</dd></div>
               <div><dt>Окончание курса</dt><dd className={emptyFieldClass(app.education_details?.course_end_date)}>{app.education_details?.course_end_date ? formatDate(app.education_details.course_end_date) : "Не выбрано"}</dd></div>
@@ -2162,31 +2204,105 @@ export function ChatsPage() {
   const { chatId } = useParams();
   const location = useLocation();
   const navigate = useNavigate();
-  const [chats, setChats] = useState<Chat[]>([]);
+  const [chats, setChats] = useState<ChatListItem[]>([]);
+  const [activeChat, setActiveChat] = useState<Chat | ChatListItem | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatSearch, setChatSearch] = useState("");
+  const [chatTotal, setChatTotal] = useState(0);
+  const [chatsOffset, setChatsOffset] = useState(0);
+  const [hasMoreChats, setHasMoreChats] = useState(false);
+  const [loadingChats, setLoadingChats] = useState(false);
+  const [messageOffset, setMessageOffset] = useState(0);
+  const [hasMoreMessages, setHasMoreMessages] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [text, setText] = useState("");
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [uploading, setUploading] = useState(false);
   const base = location.pathname.startsWith("/assistant") ? "/assistant/chats" : "/admin/chats";
-  const activeId = chatId ? Number(chatId) : chats[0]?.id;
+  const parsedChatId = chatId ? Number(chatId) : null;
+  const activeId = parsedChatId && Number.isInteger(parsedChatId) ? parsedChatId : null;
   const canUseChatFiles = ["tech_admin", "admissions_admin", "assistant"].includes(user?.role ?? "");
+  const activeChatInfo = chats.find((chat) => chat.id === activeId)
+    ?? (activeChat?.id === activeId ? activeChat : null);
 
-  const loadChats = async () => {
+  const loadChats = async (offset = 0) => {
     if (!token) return;
-    const items = await apiFetch<Chat[]>("/admin/chats", { token });
-    setChats(items);
-    if (!chatId && items[0]) navigate(`${base}/${items[0].id}`, { replace: true });
+    setLoadingChats(true);
+    const params = new URLSearchParams({ limit: String(CHAT_PAGE_SIZE), offset: String(offset) });
+    if (chatSearch.trim()) params.set("search", chatSearch.trim());
+    try {
+      const page = await apiFetch<PaginatedResponse<ChatListItem>>(`/admin/chats/page?${params.toString()}`, { token });
+      const nextChats = offset > 0
+        ? [...chats, ...page.items.filter((item) => !chats.some((chat) => chat.id === item.id))]
+        : page.items;
+      setChats(nextChats);
+      setChatTotal(page.total);
+      setChatsOffset(offset + page.items.length);
+      setHasMoreChats(offset + page.items.length < page.total);
+    } catch (err) {
+      setError(apiMessage(err));
+    } finally {
+      setLoadingChats(false);
+    }
   };
 
-  const loadMessages = async () => {
+  const loadMoreChats = async () => {
+    if (loadingChats || !hasMoreChats) return;
+    await loadChats(chatsOffset);
+  };
+
+  const loadMessages = async (offset = 0) => {
     if (!token || !activeId) return;
-    const items = await apiFetch<ChatMessage[]>(`/admin/chats/${activeId}/messages`, { token });
-    setMessages(items);
+    setLoadingMessages(true);
+    const params = new URLSearchParams({ limit: String(CHAT_PAGE_SIZE), offset: String(offset) });
+    try {
+      const items = await apiFetch<ChatMessage[]>(`/admin/chats/${activeId}/messages?${params.toString()}`, { token });
+      setMessages((current) => offset > 0
+        ? [...items, ...current.filter((message) => !items.some((item) => item.id === message.id))]
+        : items);
+      setMessageOffset(offset + items.length);
+      setHasMoreMessages(items.length === CHAT_PAGE_SIZE);
+    } catch (err) {
+      setError(apiMessage(err));
+    } finally {
+      setLoadingMessages(false);
+    }
   };
 
-  useEffect(() => { void loadChats(); }, [token]);
-  useEffect(() => { void loadMessages(); }, [token, activeId]);
+  const loadOlderMessages = async () => {
+    if (loadingMessages || !hasMoreMessages) return;
+    await loadMessages(messageOffset);
+  };
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => { void loadChats(0); }, 250);
+    return () => window.clearTimeout(timer);
+  }, [token, chatSearch]);
+
+  useEffect(() => {
+    if (!token || !activeId) {
+      setActiveChat(null);
+      setMessages([]);
+      setMessageOffset(0);
+      setHasMoreMessages(false);
+      return;
+    }
+    const listChat = chats.find((chat) => chat.id === activeId);
+    if (listChat) setActiveChat(listChat);
+    apiFetch<Chat>(`/admin/chats/${activeId}`, { token })
+      .then(setActiveChat)
+      .catch((err) => setError(apiMessage(err)));
+  }, [token, activeId, chats]);
+
+  useEffect(() => {
+    setMessages([]);
+    setMessageOffset(0);
+    setHasMoreMessages(false);
+    setText("");
+    setFile(null);
+    void loadMessages(0);
+  }, [token, activeId]);
 
   const send = async (event: FormEvent) => {
     event.preventDefault();
@@ -2204,8 +2320,8 @@ export function ChatsPage() {
       }
       setText("");
       setFile(null);
-      await loadMessages();
-      await loadChats();
+      await loadMessages(0);
+      await loadChats(0);
     } catch (err) {
       setError(apiMessage(err));
     } finally {
@@ -2228,8 +2344,9 @@ export function ChatsPage() {
       const remaining = chats.filter((chat) => chat.id !== activeId);
       setMessages([]);
       setChats(remaining);
-      navigate(remaining[0] ? `${base}/${remaining[0].id}` : base, { replace: true });
-      await loadChats();
+      setActiveChat(null);
+      navigate(base, { replace: true });
+      await loadChats(0);
     } catch (err) {
       setError(apiMessage(err));
     }
@@ -2238,49 +2355,82 @@ export function ChatsPage() {
   return (
     <section className="chat-admin">
       <aside className="chat-list">
-        <h2>Чаты</h2>
-        {chats.map((chat) => (
-          <button key={chat.id} className={chat.id === activeId ? "active" : ""} onClick={() => navigate(`${base}/${chat.id}`)}>
-            <MessageCircle size={18} />
-            <span>{chat.application?.full_name ?? `Заявка #${chat.application_id}`}</span>
-            <small>#{chat.application_id}</small>
-          </button>
-        ))}
+        <div className="pane-header">
+          <h2>Чаты</h2>
+          <small>{chatTotal}</small>
+        </div>
+        <div className="search-box chat-search-box">
+          <Search size={18} />
+          <input
+            value={chatSearch}
+            onChange={(event) => setChatSearch(event.target.value)}
+            placeholder="ФИО, ИИН, телефон, email"
+          />
+        </div>
+        <div className="chat-items">
+          {chats.map((chat) => (
+            <button key={chat.id} className={chat.id === activeId ? "active" : ""} onClick={() => navigate(`${base}/${chat.id}`)}>
+              <MessageCircle size={18} />
+              <span>{chat.application?.full_name ?? `Заявка #${chat.application_id}`}</span>
+              <small>#{chat.application_id}</small>
+            </button>
+          ))}
+          {loadingChats && !chats.length && <small className="muted">Загрузка чатов...</small>}
+          {!loadingChats && !chats.length && <small className="muted">Чаты не найдены.</small>}
+          {hasMoreChats && (
+            <button type="button" className="secondary-button load-more-button" onClick={loadMoreChats} disabled={loadingChats}>
+              {loadingChats ? "Загрузка..." : "Загрузить еще"}
+            </button>
+          )}
+        </div>
       </aside>
       <main className="chat-thread">
         <div className="thread-header">
-          <h2>{chats.find((chat) => chat.id === activeId)?.application?.full_name ?? "Чат"}</h2>
+          <h2>{activeChatInfo?.application?.full_name ?? (activeId ? "Чат" : "Выберите чат")}</h2>
           {user?.role === "tech_admin" && activeId && (
             <button className="danger-button" onClick={deleteActiveChat}><Trash2 size={16} /> Удалить чат</button>
           )}
         </div>
         {error && <div className="form-error">{error}</div>}
-        <div className="chat-messages admin">
-          {messages.map((message) => (
-            <div key={message.id} className={`message-bubble ${message.sender_type === "applicant" ? "mine" : "staff"}`}>
-              <span>{message.sender_type === "applicant" ? "Абитуриент" : roleLabels[message.sender_type as keyof typeof roleLabels] ?? "Сотрудник"}</span>
-              <p>{message.message}</p>
-              {canUseChatFiles
-                ? <ChatAttachments attachments={message.attachments ?? []} loadAttachment={loadAttachment} />
-                : Boolean(message.attachments?.length) && <small>Документ доступен приемной комиссии и помощникам.</small>}
+        {!activeId ? (
+          <EmptyState title="Чат не выбран" text="Выберите чат слева или откройте его из анкеты." />
+        ) : (
+          <>
+            <div className="chat-messages admin">
+              {hasMoreMessages && (
+                <button type="button" className="secondary-button load-more-button" onClick={loadOlderMessages} disabled={loadingMessages}>
+                  {loadingMessages ? "Загрузка..." : "Показать предыдущие"}
+                </button>
+              )}
+              {loadingMessages && !messages.length && <EmptyState title="Загрузка" text="Открываем сообщения." />}
+              {!loadingMessages && !messages.length && <EmptyState title="Сообщений нет" text="Напишите первое сообщение." />}
+              {messages.map((message) => (
+                <div key={message.id} className={`message-bubble ${message.sender_type === "applicant" ? "mine" : "staff"}`}>
+                  <span>{message.sender_type === "applicant" ? "Абитуриент" : roleLabels[message.sender_type as keyof typeof roleLabels] ?? "Сотрудник"}</span>
+                  <p>{message.message}</p>
+                  {canUseChatFiles
+                    ? <ChatAttachments attachments={message.attachments ?? []} loadAttachment={loadAttachment} />
+                    : Boolean(message.attachments?.length) && <small>Документ доступен приемной комиссии и помощникам.</small>}
+                </div>
+              ))}
             </div>
-          ))}
-        </div>
-        <form className="chat-input" onSubmit={send}>
-          <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Ответить..." />
-          {canUseChatFiles && (
-            <label className="attachment-picker" title="Прикрепить документ">
-              <Paperclip size={18} />
-              <input
-                type="file"
-                accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx"
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              />
-            </label>
-          )}
-          <button className="primary-button" disabled={uploading}>{uploading ? "Отправка..." : "Отправить"}</button>
-          {file && <span className="selected-file">{file.name} <button type="button" onClick={() => setFile(null)}><X size={14} /></button></span>}
-        </form>
+            <form className="chat-input" onSubmit={send}>
+              <input value={text} onChange={(event) => setText(event.target.value)} placeholder="Ответить..." />
+              {canUseChatFiles && (
+                <label className="attachment-picker" title="Прикрепить документ">
+                  <Paperclip size={18} />
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,.gif,.webp,.doc,.docx,.xls,.xlsx"
+                    onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                  />
+                </label>
+              )}
+              <button className="primary-button" disabled={uploading || (!text.trim() && !file)}>{uploading ? "Отправка..." : "Отправить"}</button>
+              {file && <span className="selected-file">{file.name} <button type="button" onClick={() => setFile(null)}><X size={14} /></button></span>}
+            </form>
+          </>
+        )}
       </main>
     </section>
   );

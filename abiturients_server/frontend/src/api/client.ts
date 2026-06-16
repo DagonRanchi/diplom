@@ -127,6 +127,13 @@ export type Application = {
   chat_id?: number | null;
 };
 
+export type PaginatedResponse<T> = {
+  items: T[];
+  total: number;
+  limit: number;
+  offset: number;
+};
+
 export type FolderNode = {
   id: number;
   name: string;
@@ -139,12 +146,25 @@ export type FolderNode = {
   updated_at: string;
 };
 
+export type ChatApplicationSummary = {
+  id: number;
+  full_name: string;
+  iin: string;
+  phone: string;
+  email: string;
+  status: string;
+};
+
 export type Chat = {
   id: number;
   application_id: number;
   created_at: string;
   updated_at: string;
   application?: Application | null;
+};
+
+export type ChatListItem = Omit<Chat, "application"> & {
+  application?: ChatApplicationSummary | null;
 };
 
 export type ChatMessage = {

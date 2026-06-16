@@ -421,6 +421,34 @@ class ChatAttachmentRead(BaseModel):
     created_at: datetime
 
 
+class ChatApplicationSummary(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    full_name: str
+    iin: str
+    phone: str
+    email: str
+    status: str
+
+
+class ChatListItemRead(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    application_id: int
+    created_at: datetime
+    updated_at: datetime
+    application: ChatApplicationSummary | None = None
+
+
+class ChatPageRead(BaseModel):
+    items: list[ChatListItemRead]
+    total: int
+    limit: int
+    offset: int
+
+
 class ChatRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
