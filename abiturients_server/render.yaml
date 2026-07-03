@@ -1,43 +1,26 @@
+# Exported from Render on 2026-07-03T08:21:04Z
+version: "1"
 services:
-  - type: web
-    name: cet-register
-    runtime: docker
-    plan: free
-    healthCheckPath: /health
-    dockerfilePath: ./backend/Dockerfile
-    dockerContext: ./backend
-    envVars:
-      - key: DATABASE_URL
-        fromDatabase:
-          name: cet-admissions-db
-          property: connectionString
-      - key: JWT_SECRET
-        generateValue: true
-      - key: JWT_ALGORITHM
-        value: HS256
-      - key: ACCESS_TOKEN_EXPIRE_MINUTES
-        value: 720
-      - key: CORS_ORIGINS
-        value: https://cet-nyzd.onrender.com
-      - key: ENVIRONMENT
-        value: production
-
-  - type: web
-    name: cet-nyzd
-    runtime: static
-    rootDir: frontend
-    buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
-    envVars:
-      - key: VITE_API_URL
-        value: https://cet-register.onrender.com
-    routes:
-      - type: rewrite
-        source: /*
-        destination: /index.html
-
-databases:
-  - name: cet-admissions-db
-    plan: free
-    databaseName: cet_admissions
-    user: cet_admissions_user
+- type: web
+  name: cet_register
+  runtime: docker
+  repo: https://github.com/DagonRanchi/diplom
+  plan: free
+  envVars:
+  - key: ENVIRONMENT
+    sync: false
+  - key: CORS_ORIGINS
+    sync: false
+  - key: ACCESS_TOKEN_EXPIRE_MINUTES
+    sync: false
+  - key: JWT_ALGORITHM
+    sync: false
+  - key: JWT_SECRET
+    sync: false
+  - key: DATABASE_URL
+    sync: false
+  region: oregon
+  dockerContext: .
+  dockerfilePath: ./Dockerfile
+  autoDeployTrigger: commit
+  rootDir: abiturients_server/backend
