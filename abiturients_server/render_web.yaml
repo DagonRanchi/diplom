@@ -1,0 +1,14 @@
+# Exported from Render on 2026-07-03T08:45:46Z
+version: "1"
+services:
+- type: web
+  name: cet
+  runtime: static
+  repo: https://github.com/DagonRanchi/diplom
+  envVars:
+  - key: VITE_API_URL
+    sync: false
+  buildCommand: npm install && npm run build
+  staticPublishPath: dist
+  autoDeployTrigger: commit
+  rootDir: abiturients_server/frontend

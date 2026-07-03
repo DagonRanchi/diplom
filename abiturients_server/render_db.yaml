@@ -1,0 +1,13 @@
+# Exported from Render on 2026-07-03T08:44:59Z
+version: "1"
+databases:
+- name: cet_register_db
+  databaseName: cet_register_db
+  user: cet_register_db_user
+  plan: basic-256mb
+  region: oregon
+  ipAllowList:
+  - source: 0.0.0.0/0
+    description: everywhere
+  postgresMajorVersion: "18"
+  diskSizeGB: 1
